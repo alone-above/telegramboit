@@ -38,7 +38,7 @@ from aiogram.client.default import DefaultBotProperties
 # ║  КОНФИГУРАЦИЯ  —  ЗАПОЛНИ СВОИ ДАННЫЕ ЗДЕСЬ     ║
 # ╚══════════════════════════════════════════════════╝
 
-BOT_TOKEN = "8719983805:AAGP2XNujvrWnXfcLrcYH6UUsrdFxhH2YF8"
+BOT_TOKEN = "8632657131:AAFIwXVbe0EbY7L7MLynLc8z7VFZVGXWTw4"
 ADMIN_IDS = [7774179831]            # Telegram ID админов (можно несколько)
 
 TEMP_DIR = "tmp_converter"

@@ -1,0 +1,1556 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Emoji2Video — Конвертер</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --green-1: #78E700;
+            --green-2: #6FAD2B;
+            --green-3: #4E9600;
+            --green-4: #9BF33D;
+            --green-5: #B3F36D;
+            --bg-primary: #0D0F0E;
+            --bg-secondary: #141816;
+            --bg-card: #1A1E1C;
+            --bg-card-hover: #212624;
+            --bg-input: #1A1E1C;
+            --bg-modal: #141816;
+            --text-primary: #F0F5F1;
+            --text-secondary: #8A9B8E;
+            --text-muted: #556259;
+            --border: #2A302D;
+            --border-active: #78E700;
+            --shadow-glow: 0 0 30px rgba(120, 231, 0, 0.15);
+            --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.3);
+            --radius: 16px;
+            --radius-sm: 12px;
+            --radius-xs: 8px;
+            --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* === SCROLLBAR === */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--green-3); border-radius: 4px; }
+
+        /* === ANIMATED BACKGROUND === */
+        .bg-glow {
+            position: fixed;
+            top: -40%;
+            left: -20%;
+            width: 140%;
+            height: 140%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+        .bg-glow .orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.07;
+            animation: orbFloat 20s ease-in-out infinite;
+        }
+        .bg-glow .orb:nth-child(1) {
+            width: 500px; height: 500px;
+            background: var(--green-1);
+            top: 10%; left: 20%;
+            animation-delay: 0s;
+        }
+        .bg-glow .orb:nth-child(2) {
+            width: 400px; height: 400px;
+            background: var(--green-4);
+            top: 50%; right: 10%;
+            animation-delay: -7s;
+        }
+        .bg-glow .orb:nth-child(3) {
+            width: 350px; height: 350px;
+            background: var(--green-3);
+            bottom: 10%; left: 40%;
+            animation-delay: -14s;
+        }
+        @keyframes orbFloat {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            25% { transform: translate(60px, -40px) scale(1.1); }
+            50% { transform: translate(-30px, 50px) scale(0.95); }
+            75% { transform: translate(40px, 20px) scale(1.05); }
+        }
+
+        /* === LAYOUT === */
+        .app {
+            position: relative;
+            z-index: 1;
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 16px 16px 100px;
+            min-height: 100vh;
+        }
+
+        /* === HEADER === */
+        .header {
+            text-align: center;
+            padding: 20px 0 28px;
+            animation: fadeSlideDown 0.6s ease-out;
+        }
+        .header-icon {
+            width: 72px;
+            height: 72px;
+            border-radius: 22px;
+            background: linear-gradient(135deg, var(--green-3), var(--green-1));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+            font-size: 32px;
+            box-shadow: 0 8px 32px rgba(120, 231, 0, 0.25);
+            animation: iconPulse 3s ease-in-out infinite;
+            position: relative;
+        }
+        .header-icon::after {
+            content: '';
+            position: absolute;
+            inset: -3px;
+            border-radius: 24px;
+            background: linear-gradient(135deg, var(--green-4), var(--green-3), var(--green-1));
+            z-index: -1;
+            opacity: 0.5;
+            animation: borderSpin 4s linear infinite;
+        }
+        @keyframes iconPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        @keyframes borderSpin {
+            0% { filter: hue-rotate(0deg); }
+            100% { filter: hue-rotate(360deg); }
+        }
+        .header h1 {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, var(--green-5), var(--green-1), var(--green-4));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 6px;
+        }
+        .header p {
+            font-size: 14px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        /* === NAVIGATION TABS === */
+        .nav-tabs {
+            display: flex;
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            padding: 4px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border);
+            animation: fadeSlideUp 0.5s ease-out 0.1s both;
+        }
+        .nav-tab {
+            flex: 1;
+            padding: 12px 8px;
+            text-align: center;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            user-select: none;
+            position: relative;
+            overflow: hidden;
+        }
+        .nav-tab::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, var(--green-3), var(--green-1));
+            opacity: 0;
+            transition: var(--transition);
+            border-radius: var(--radius-sm);
+        }
+        .nav-tab.active::before { opacity: 1; }
+        .nav-tab.active {
+            color: #0D0F0E;
+            text-shadow: none;
+        }
+        .nav-tab span, .nav-tab i { position: relative; z-index: 1; }
+        .nav-tab:not(.active):hover { color: var(--text-primary); background: var(--bg-card-hover); }
+        .nav-tab:active { transform: scale(0.97); }
+
+        /* === TAB PAGES === */
+        .tab-page {
+            display: none;
+            animation: fadeSlideUp 0.4s ease-out;
+        }
+        .tab-page.active { display: block; }
+
+        /* === SECTION === */
+        .section {
+            margin-bottom: 20px;
+            animation: fadeSlideUp 0.5s ease-out both;
+        }
+        .section:nth-child(1) { animation-delay: 0.15s; }
+        .section:nth-child(2) { animation-delay: 0.25s; }
+        .section:nth-child(3) { animation-delay: 0.35s; }
+        .section:nth-child(4) { animation-delay: 0.45s; }
+
+        .section-label {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--green-2);
+            margin-bottom: 10px;
+            padding-left: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .section-label i { font-size: 11px; }
+
+        /* === CARD === */
+        .card {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            padding: 18px;
+            transition: var(--transition);
+        }
+        .card:hover {
+            border-color: rgba(120, 231, 0, 0.2);
+            box-shadow: var(--shadow-glow);
+        }
+
+        /* === INPUT AREA === */
+        .input-area {
+            position: relative;
+        }
+        .input-area .emoji-input-wrap {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .emoji-input {
+            flex: 1;
+            background: var(--bg-input);
+            border: 2px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 16px;
+            font-size: 16px;
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            outline: none;
+            transition: var(--transition);
+        }
+        .emoji-input::placeholder { color: var(--text-muted); font-size: 14px; }
+        .emoji-input:focus {
+            border-color: var(--green-1);
+            box-shadow: 0 0 0 4px rgba(120, 231, 0, 0.1);
+        }
+        .input-hint {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 8px;
+            padding-left: 4px;
+        }
+        .input-hint i { color: var(--green-2); margin-right: 4px; }
+
+        /* === OPTIONS GRID === */
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+            gap: 8px;
+        }
+        .option-btn {
+            padding: 12px 8px;
+            border-radius: var(--radius-xs);
+            border: 2px solid var(--border);
+            background: var(--bg-input);
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: var(--transition);
+            text-align: center;
+            user-select: none;
+            position: relative;
+            overflow: hidden;
+        }
+        .option-btn .opt-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            display: block;
+            margin-top: 2px;
+            font-weight: 500;
+        }
+        .option-btn:hover {
+            border-color: rgba(120, 231, 0, 0.3);
+            color: var(--text-primary);
+            background: var(--bg-card-hover);
+        }
+        .option-btn:active { transform: scale(0.95); }
+        .option-btn.selected {
+            border-color: var(--green-1);
+            background: rgba(120, 231, 0, 0.08);
+            color: var(--green-4);
+            box-shadow: 0 0 16px rgba(120, 231, 0, 0.12);
+        }
+        .option-btn.selected::after {
+            content: '';
+            position: absolute;
+            top: 6px; right: 6px;
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--green-1);
+            box-shadow: 0 0 8px var(--green-1);
+        }
+
+        /* === COLOR OPTIONS === */
+        .color-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+        }
+        .color-btn {
+            aspect-ratio: 1;
+            border-radius: var(--radius-sm);
+            border: 3px solid transparent;
+            cursor: pointer;
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+        .color-btn:hover { transform: scale(1.1); }
+        .color-btn:active { transform: scale(0.95); }
+        .color-btn.selected {
+            border-color: var(--green-1);
+            box-shadow: 0 0 16px rgba(120, 231, 0, 0.3);
+            transform: scale(1.08);
+        }
+        .color-btn.selected::after {
+            content: '\f00c';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            color: white;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+        }
+        .color-btn.transparent-bg {
+            background: repeating-conic-gradient(#333 0% 25%, #555 0% 50%) 50% / 12px 12px;
+        }
+        .color-btn.gradient { background-size: 200% 200%; animation: gradientShift 3s ease infinite; }
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        .color-label {
+            font-size: 11px;
+            text-align: center;
+            color: var(--text-muted);
+            margin-top: 4px;
+            font-weight: 500;
+        }
+        .color-item { display: flex; flex-direction: column; align-items: center; }
+
+        /* === CUSTOM HEX INPUT === */
+        .custom-hex-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+            align-items: center;
+        }
+        .hex-input {
+            flex: 1;
+            background: var(--bg-input);
+            border: 2px solid var(--border);
+            border-radius: var(--radius-xs);
+            padding: 10px 12px;
+            font-size: 14px;
+            font-family: 'Inter', monospace;
+            color: var(--text-primary);
+            outline: none;
+            transition: var(--transition);
+        }
+        .hex-input:focus { border-color: var(--green-1); }
+        .hex-preview {
+            width: 42px;
+            height: 42px;
+            border-radius: var(--radius-xs);
+            border: 2px solid var(--border);
+            transition: var(--transition);
+            flex-shrink: 0;
+        }
+
+        /* === CONVERT BUTTON === */
+        .convert-btn {
+            width: 100%;
+            padding: 18px;
+            border: none;
+            border-radius: var(--radius);
+            background: linear-gradient(135deg, var(--green-3), var(--green-1));
+            color: #0D0F0E;
+            font-size: 16px;
+            font-weight: 700;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            position: relative;
+            overflow: hidden;
+            margin-top: 8px;
+            letter-spacing: 0.3px;
+        }
+        .convert-btn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, var(--green-1), var(--green-4));
+            opacity: 0;
+            transition: var(--transition);
+        }
+        .convert-btn:hover::before { opacity: 1; }
+        .convert-btn:hover {
+            box-shadow: 0 8px 32px rgba(120, 231, 0, 0.3);
+            transform: translateY(-2px);
+        }
+        .convert-btn:active { transform: translateY(0) scale(0.98); }
+        .convert-btn span, .convert-btn i { position: relative; z-index: 1; }
+        .convert-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+        .convert-btn.loading span { opacity: 0; }
+        .convert-btn .spinner {
+            display: none;
+            position: absolute;
+            width: 24px; height: 24px;
+            border: 3px solid rgba(13, 15, 14, 0.3);
+            border-top-color: #0D0F0E;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            z-index: 1;
+        }
+        .convert-btn.loading .spinner { display: block; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* === STATUS / RESULT === */
+        .status-area {
+            margin-top: 16px;
+            display: none;
+        }
+        .status-area.visible { display: block; animation: fadeSlideUp 0.4s ease-out; }
+        .status-card {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            padding: 20px;
+            text-align: center;
+        }
+        .status-card.success { border-color: var(--green-1); }
+        .status-card.error { border-color: #E74C3C; }
+        .status-icon {
+            width: 56px; height: 56px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 12px;
+            font-size: 24px;
+        }
+        .status-card.success .status-icon {
+            background: rgba(120, 231, 0, 0.1);
+            color: var(--green-1);
+        }
+        .status-card.error .status-icon {
+            background: rgba(231, 76, 60, 0.1);
+            color: #E74C3C;
+        }
+        .status-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+        .status-card p { font-size: 13px; color: var(--text-secondary); }
+
+        /* === PROGRESS BAR === */
+        .progress-wrap {
+            margin-top: 12px;
+            background: rgba(120, 231, 0, 0.1);
+            border-radius: 8px;
+            height: 6px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--green-3), var(--green-1), var(--green-4));
+            border-radius: 8px;
+            width: 0%;
+            transition: width 0.3s ease;
+            background-size: 200% 100%;
+            animation: progressShimmer 1.5s ease infinite;
+        }
+        @keyframes progressShimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* === HISTORY TAB === */
+        .history-empty {
+            text-align: center;
+            padding: 48px 24px;
+            color: var(--text-muted);
+        }
+        .history-empty i {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.3;
+            display: block;
+        }
+        .history-empty p { font-size: 14px; }
+
+        .history-item {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px 16px;
+            background: var(--bg-card);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            margin-bottom: 10px;
+            transition: var(--transition);
+            animation: fadeSlideUp 0.3s ease-out both;
+        }
+        .history-item:hover {
+            border-color: rgba(120, 231, 0, 0.2);
+        }
+        .history-item .hi-icon {
+            width: 44px; height: 44px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+        .history-item .hi-info { flex: 1; min-width: 0; }
+        .history-item .hi-info h4 {
+            font-size: 14px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .history-item .hi-info span {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .history-item .hi-status {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 20px;
+            white-space: nowrap;
+        }
+        .hi-status.done {
+            background: rgba(120, 231, 0, 0.1);
+            color: var(--green-4);
+        }
+        .hi-status.fail {
+            background: rgba(231, 76, 60, 0.1);
+            color: #E74C3C;
+        }
+
+        /* === SETTINGS INFO CARDS === */
+        .info-cards {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .info-card {
+            background: var(--bg-card);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            padding: 16px;
+            text-align: center;
+            transition: var(--transition);
+        }
+        .info-card:hover { border-color: rgba(120, 231, 0, 0.2); }
+        .info-card .ic-value {
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--green-1);
+        }
+        .info-card .ic-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* === PRESET CHIPS === */
+        .preset-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .preset-chip {
+            padding: 8px 16px;
+            border-radius: 20px;
+            background: var(--bg-input);
+            border: 2px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: var(--transition);
+            user-select: none;
+        }
+        .preset-chip:hover {
+            border-color: rgba(120, 231, 0, 0.3);
+            color: var(--text-primary);
+        }
+        .preset-chip:active { transform: scale(0.95); }
+        .preset-chip.selected {
+            border-color: var(--green-1);
+            background: rgba(120, 231, 0, 0.1);
+            color: var(--green-4);
+        }
+
+        /* === TOOLTIP === */
+        .tooltip-trigger {
+            position: relative;
+            cursor: help;
+        }
+        .tooltip-trigger .tooltip-text {
+            display: none;
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-xs);
+            padding: 8px 12px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            z-index: 100;
+            box-shadow: var(--shadow-card);
+        }
+        .tooltip-trigger:hover .tooltip-text { display: block; }
+
+        /* === BOTTOM BAR === */
+        .bottom-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, var(--bg-primary) 60%, transparent);
+            padding: 16px;
+            z-index: 50;
+            display: flex;
+            justify-content: center;
+        }
+        .bottom-bar .convert-btn { max-width: 480px; }
+
+        /* === ANIMATIONS === */
+        @keyframes fadeSlideUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeSlideDown {
+            from { opacity: 0; transform: translateY(-16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes scaleIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translateX(-6px); }
+            40% { transform: translateX(6px); }
+            60% { transform: translateX(-4px); }
+            80% { transform: translateX(4px); }
+        }
+        .shake { animation: shake 0.5s ease-out; }
+
+        /* === RIPPLE EFFECT === */
+        .ripple {
+            position: relative;
+            overflow: hidden;
+        }
+        .ripple-wave {
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(120, 231, 0, 0.3);
+            transform: scale(0);
+            animation: rippleAnim 0.6s ease-out;
+            pointer-events: none;
+        }
+        @keyframes rippleAnim {
+            to { transform: scale(4); opacity: 0; }
+        }
+
+        /* === TOAST === */
+        .toast-container {
+            position: fixed;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-width: 400px;
+            width: calc(100% - 32px);
+        }
+        .toast {
+            padding: 14px 18px;
+            border-radius: var(--radius-sm);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-card);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            animation: toastIn 0.4s ease-out;
+            color: var(--text-primary);
+        }
+        .toast.toast-out { animation: toastOut 0.3s ease-in forwards; }
+        .toast i { font-size: 16px; flex-shrink: 0; }
+        .toast.success i { color: var(--green-1); }
+        .toast.error i { color: #E74C3C; }
+        .toast.info i { color: #3498DB; }
+        @keyframes toastIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes toastOut { to { opacity: 0; transform: translateY(-20px); } }
+
+        /* === MODAL OVERLAY === */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(8px);
+            z-index: 1000;
+            display: none;
+            align-items: flex-end;
+            justify-content: center;
+            animation: fadeIn 0.3s ease;
+        }
+        .modal-overlay.visible { display: flex; }
+        .modal-sheet {
+            width: 100%;
+            max-width: 480px;
+            max-height: 80vh;
+            background: var(--bg-modal);
+            border-radius: var(--radius) var(--radius) 0 0;
+            padding: 20px;
+            animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            overflow-y: auto;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        .modal-handle {
+            width: 40px;
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+            margin: 0 auto 16px;
+        }
+        .modal-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+
+        /* === CURRENT SETTINGS SUMMARY === */
+        .settings-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 10px;
+        }
+        .summary-tag {
+            padding: 4px 10px;
+            border-radius: 6px;
+            background: rgba(120, 231, 0, 0.08);
+            border: 1px solid rgba(120, 231, 0, 0.15);
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--green-4);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .summary-tag i { font-size: 10px; color: var(--green-2); }
+
+        /* === ABOUT TAB === */
+        .about-block {
+            text-align: center;
+            padding: 20px 0;
+        }
+        .about-block .version {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            background: rgba(120, 231, 0, 0.1);
+            color: var(--green-4);
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 16px;
+        }
+        .features-list {
+            text-align: left;
+        }
+        .feature-item {
+            display: flex;
+            gap: 14px;
+            padding: 14px 0;
+            border-bottom: 1px solid var(--border);
+            animation: fadeSlideUp 0.4s ease-out both;
+        }
+        .feature-item:last-child { border-bottom: none; }
+        .feature-item .fi-icon {
+            width: 40px; height: 40px;
+            border-radius: 12px;
+            background: rgba(120, 231, 0, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--green-1);
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+        .feature-item h4 { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+        .feature-item p { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+    </style>
+</head>
+<body>
+    <!-- BG GLOW -->
+    <div class="bg-glow">
+        <div class="orb"></div>
+        <div class="orb"></div>
+        <div class="orb"></div>
+    </div>
+
+    <!-- TOAST CONTAINER -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- APP -->
+    <div class="app">
+        <!-- HEADER -->
+        <div class="header">
+            <div class="header-icon">
+                <i class="fas fa-wand-magic-sparkles"></i>
+            </div>
+            <h1>Emoji2Video</h1>
+            <p>Конвертируй Premium Emoji в видео</p>
+        </div>
+
+        <!-- NAV TABS -->
+        <div class="nav-tabs">
+            <div class="nav-tab active ripple" data-tab="convert" onclick="switchTab('convert', this)">
+                <i class="fas fa-video"></i>
+                <span>Конвертер</span>
+            </div>
+            <div class="nav-tab ripple" data-tab="settings" onclick="switchTab('settings', this)">
+                <i class="fas fa-sliders"></i>
+                <span>Настройки</span>
+            </div>
+            <div class="nav-tab ripple" data-tab="history" onclick="switchTab('history', this)">
+                <i class="fas fa-clock-rotate-left"></i>
+                <span>История</span>
+            </div>
+            <div class="nav-tab ripple" data-tab="about" onclick="switchTab('about', this)">
+                <i class="fas fa-circle-info"></i>
+                <span>Инфо</span>
+            </div>
+        </div>
+
+        <!-- ===== CONVERT TAB ===== -->
+        <div class="tab-page active" id="tab-convert">
+            <div class="section">
+                <div class="section-label">
+                    <i class="fas fa-paper-plane"></i>
+                    Emoji ID или стикер
+                </div>
+                <div class="card">
+                    <div class="input-area">
+                        <div class="emoji-input-wrap">
+                            <input type="text" class="emoji-input" id="emojiInput" placeholder="Введите Custom Emoji ID..." autocomplete="off" inputmode="numeric">
+                        </div>
+                        <div class="input-hint">
+                            <i class="fas fa-lightbulb"></i>
+                            Отправьте premium emoji боту или введите его ID
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-label">
+                    <i class="fas fa-gear"></i>
+                    Текущие настройки
+                </div>
+                <div class="card">
+                    <div class="settings-summary" id="settingsSummary">
+                        <!-- filled by JS -->
+                    </div>
+                    <div style="margin-top: 12px;">
+                        <button class="option-btn" style="width:100%; padding:10px;" onclick="switchTab('settings', document.querySelector('[data-tab=settings]'))">
+                            <i class="fas fa-sliders" style="margin-right:6px; color:var(--green-2);"></i>
+                            Изменить настройки
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STATUS -->
+            <div class="status-area" id="statusArea">
+                <div class="status-card" id="statusCard">
+                    <div class="status-icon" id="statusIcon"></div>
+                    <h3 id="statusTitle"></h3>
+                    <p id="statusText"></p>
+                    <div class="progress-wrap" id="progressWrap" style="display:none;">
+                        <div class="progress-bar" id="progressBar"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== SETTINGS TAB ===== -->
+        <div class="tab-page" id="tab-settings">
+            <!-- BG COLOR -->
+            <div class="section">
+                <div class="section-label">
+                    <i class="fas fa-palette"></i>
+                    Цвет фона
+                </div>
+                <div class="card">
+                    <div class="color-grid" id="colorGrid">
+                        <!-- filled by JS -->
+                    </div>
+                    <div class="custom-hex-row">
+                        <div class="hex-preview" id="hexPreview" style="background:#78E700;"></div>
+                        <input type="text" class="hex-input" id="hexInput" placeholder="#HEX цвет" maxlength="7">
+                        <button class="option-btn" style="padding:10px 14px; white-space:nowrap;" onclick="applyCustomHex()">
+                            <i class="fas fa-check"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RESOLUTION -->
+            <div class="section">
+                <div class="section-label">
+                    <i class="fas fa-expand"></i>
+                    Разрешение
+                </div>
+                <div class="card">
+                    <div class="options-grid" id="resolutionGrid">
+                        <!-- filled by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- QUALITY -->
+            <div class="section">
+                <div class="section-label">
+                    <i class="fas fa-star"></i>
+                    Качество видео
+                </div>
+                <div class="card">
+                    <div class="options-grid" id="qualityGrid">
+                        <!-- filled by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- FPS -->
+            <div class="section">
+                <div class="section-label">
+                    <i class="fas fa-gauge-high"></i>
+                    Частота кадров
+                </div>
+                <div class="card">
+                    <div class="preset-chips" id="fpsChips">
+                        <!-- filled by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== HISTORY TAB ===== -->
+        <div class="tab-page" id="tab-history">
+            <div class="section" style="animation-delay:0s;">
+                <div class="info-cards">
+                    <div class="info-card">
+                        <div class="ic-value" id="statTotal">0</div>
+                        <div class="ic-label">Всего</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="ic-value" id="statSuccess">0</div>
+                        <div class="ic-label">Успешно</div>
+                    </div>
+                </div>
+            </div>
+            <div class="section" style="animation-delay:0.1s;">
+                <div class="section-label">
+                    <i class="fas fa-list"></i>
+                    Последние конвертации
+                </div>
+                <div id="historyList">
+                    <div class="history-empty">
+                        <i class="fas fa-inbox"></i>
+                        <p>Пока нет конвертаций.<br>Начните с вкладки «Конвертер»!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== ABOUT TAB ===== -->
+        <div class="tab-page" id="tab-about">
+            <div class="section">
+                <div class="about-block">
+                    <div class="header-icon" style="margin-bottom:16px;">
+                        <i class="fas fa-wand-magic-sparkles"></i>
+                    </div>
+                    <span class="version">v1.0.0</span>
+                    <h1 style="font-size:22px; font-weight:800; margin-bottom:4px;">Emoji2Video</h1>
+                    <p style="color:var(--text-secondary); font-size:13px;">Premium Emoji → MP4 конвертер</p>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-label">
+                    <i class="fas fa-bolt"></i>
+                    Возможности
+                </div>
+                <div class="card features-list">
+                    <div class="feature-item" style="animation-delay:0.1s;">
+                        <div class="fi-icon"><i class="fas fa-face-grin-stars"></i></div>
+                        <div>
+                            <h4>Premium Emoji</h4>
+                            <p>Отправьте любой Premium эмодзи и получите MP4 с анимацией</p>
+                        </div>
+                    </div>
+                    <div class="feature-item" style="animation-delay:0.2s;">
+                        <div class="fi-icon"><i class="fas fa-hashtag"></i></div>
+                        <div>
+                            <h4>Custom Emoji ID</h4>
+                            <p>Введите ID эмодзи для конвертации без Telegram Premium</p>
+                        </div>
+                    </div>
+                    <div class="feature-item" style="animation-delay:0.3s;">
+                        <div class="fi-icon"><i class="fas fa-palette"></i></div>
+                        <div>
+                            <h4>Кастомный фон</h4>
+                            <p>12 цветов, 3 градиента, прозрачный фон или свой HEX</p>
+                        </div>
+                    </div>
+                    <div class="feature-item" style="animation-delay:0.4s;">
+                        <div class="fi-icon"><i class="fas fa-expand"></i></div>
+                        <div>
+                            <h4>Разрешение и качество</h4>
+                            <p>От 360p до Full HD, настройка FPS и CRF качества</p>
+                        </div>
+                    </div>
+                    <div class="feature-item" style="animation-delay:0.5s;">
+                        <div class="fi-icon"><i class="fas fa-shield-halved"></i></div>
+                        <div>
+                            <h4>Админ-панель</h4>
+                            <p>Статистика, рассылка, бан/разбан через бота</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="card" style="text-align:center; padding:24px;">
+                    <p style="color:var(--text-muted); font-size:12px;">Сделано с <i class="fas fa-heart" style="color:var(--green-1);"></i> для Telegram</p>
+                    <p style="color:var(--text-muted); font-size:11px; margin-top:4px;">© 2025 Emoji2Video Bot</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- BOTTOM BAR -->
+    <div class="bottom-bar" id="bottomBar">
+        <button class="convert-btn ripple" id="convertBtn" onclick="startConvert()">
+            <i class="fas fa-wand-magic-sparkles"></i>
+            <span>Конвертировать в MP4</span>
+            <div class="spinner"></div>
+        </button>
+    </div>
+
+    <script>
+        // =============== TELEGRAM WEB APP ===============
+        let tg = window.Telegram?.WebApp;
+        if (tg) {
+            tg.ready();
+            tg.expand();
+            tg.setHeaderColor('#0D0F0E');
+            tg.setBackgroundColor('#0D0F0E');
+        }
+
+        // =============== STATE ===============
+        const state = {
+            bg: '#000000',
+            bgName: 'Чёрный',
+            resolution: '512x512',
+            resName: '512²',
+            quality: 18,
+            qualityName: 'Высокое',
+            fps: 30,
+            history: JSON.parse(localStorage.getItem('e2v_history') || '[]'),
+        };
+
+        // =============== DATA ===============
+        const COLORS = [
+            { hex: '#000000', name: 'Чёрный' },
+            { hex: '#FFFFFF', name: 'Белый' },
+            { hex: '#78E700', name: 'Зелёный' },
+            { hex: '#3498DB', name: 'Голубой' },
+            { hex: '#9B59B6', name: 'Фиолет' },
+            { hex: '#E74C3C', name: 'Красный' },
+            { hex: '#F39C12', name: 'Оранж' },
+            { hex: '#1ABC9C', name: 'Бирюза' },
+            { hex: '#E91E63', name: 'Розовый' },
+            { hex: '#2C3E50', name: 'Тёмный' },
+            { hex: 'linear-gradient(135deg, #78E700, #3498DB)', name: 'Градиент 1', gradient: true },
+            { hex: 'linear-gradient(135deg, #E74C3C, #F39C12)', name: 'Градиент 2', gradient: true },
+            { hex: 'linear-gradient(135deg, #9B59B6, #E91E63)', name: 'Градиент 3', gradient: true },
+            { hex: 'transparent', name: 'Прозрач.', transparent: true },
+        ];
+
+        const RESOLUTIONS = [
+            { value: '360x360', label: '360²', sub: '' },
+            { value: '512x512', label: '512²', sub: 'Стандарт' },
+            { value: '720x720', label: '720²', sub: '' },
+            { value: '1024x1024', label: '1024²', sub: '' },
+            { value: '1280x720', label: '720p', sub: 'HD' },
+            { value: '1920x1080', label: '1080p', sub: 'Full HD' },
+        ];
+
+        const QUALITIES = [
+            { value: 10, label: 'CRF 10', sub: 'Макс' },
+            { value: 18, label: 'CRF 18', sub: 'Высокое' },
+            { value: 26, label: 'CRF 26', sub: 'Среднее' },
+            { value: 35, label: 'CRF 35', sub: 'Низкое' },
+        ];
+
+        const FPS_OPTIONS = [24, 30, 60];
+
+        // =============== INIT ===============
+        function init() {
+            renderColors();
+            renderResolutions();
+            renderQualities();
+            renderFPS();
+            updateSummary();
+            updateHistoryStats();
+        }
+
+        // =============== TABS ===============
+        function switchTab(tabId, el) {
+            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
+            el.classList.add('active');
+            const page = document.getElementById('tab-' + tabId);
+            page.classList.add('active');
+
+            // Bottom bar visibility
+            const bb = document.getElementById('bottomBar');
+            bb.style.display = tabId === 'convert' ? 'flex' : 'none';
+
+            // Haptic
+            if (tg?.HapticFeedback) tg.HapticFeedback.selectionChanged();
+
+            // Re-animate sections
+            page.querySelectorAll('.section').forEach((s, i) => {
+                s.style.animation = 'none';
+                s.offsetHeight;
+                s.style.animation = `fadeSlideUp 0.5s ease-out ${i * 0.1}s both`;
+            });
+
+            if (tabId === 'settings') updateSummary();
+        }
+
+        // =============== RENDER COLORS ===============
+        function renderColors() {
+            const grid = document.getElementById('colorGrid');
+            grid.innerHTML = COLORS.map((c, i) => {
+                let style = '';
+                let cls = 'color-btn';
+                if (c.transparent) {
+                    cls += ' transparent-bg';
+                } else if (c.gradient) {
+                    style = `background: ${c.hex};`;
+                    cls += ' gradient';
+                } else {
+                    style = `background: ${c.hex};`;
+                }
+                if ((c.gradient || c.transparent ? c.hex : c.hex) === state.bg) cls += ' selected';
+                return `
+                    <div class="color-item">
+                        <div class="${cls}" style="${style}" onclick="selectColor(${i})" data-color-idx="${i}"></div>
+                        <div class="color-label">${c.name}</div>
+                    </div>`;
+            }).join('');
+        }
+
+        function selectColor(idx) {
+            const c = COLORS[idx];
+            state.bg = c.hex;
+            state.bgName = c.name;
+            document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('selected'));
+            document.querySelector(`[data-color-idx="${idx}"]`).classList.add('selected');
+            if (tg?.HapticFeedback) tg.HapticFeedback.selectionChanged();
+            updateSummary();
+        }
+
+        function applyCustomHex() {
+            const val = document.getElementById('hexInput').value.trim();
+            if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+                state.bg = val;
+                state.bgName = val;
+                document.getElementById('hexPreview').style.background = val;
+                document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('selected'));
+                showToast('Цвет применён: ' + val, 'success');
+                if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                updateSummary();
+            } else {
+                showToast('Введите валидный HEX: #RRGGBB', 'error');
+                document.getElementById('hexInput').classList.add('shake');
+                setTimeout(() => document.getElementById('hexInput').classList.remove('shake'), 500);
+                if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('hexInput').addEventListener('input', function() {
+                let v = this.value;
+                if (v && !v.startsWith('#')) v = '#' + v;
+                if (/^#[0-9A-Fa-f]{0,6}$/.test(v)) {
+                    this.value = v;
+                    if (v.length === 7) {
+                        document.getElementById('hexPreview').style.background = v;
+                    }
+                }
+            });
+        });
+
+        // =============== RENDER RESOLUTIONS ===============
+        function renderResolutions() {
+            const grid = document.getElementById('resolutionGrid');
+            grid.innerHTML = RESOLUTIONS.map((r, i) => `
+                <button class="option-btn ${r.value === state.resolution ? 'selected' : ''}" onclick="selectResolution(${i})" data-res-idx="${i}">
+                    ${r.label}
+                    ${r.sub ? `<span class="opt-label">${r.sub}</span>` : ''}
+                </button>
+            `).join('');
+        }
+
+        function selectResolution(idx) {
+            const r = RESOLUTIONS[idx];
+            state.resolution = r.value;
+            state.resName = r.label;
+            document.querySelectorAll('[data-res-idx]').forEach(b => b.classList.remove('selected'));
+            document.querySelector(`[data-res-idx="${idx}"]`).classList.add('selected');
+            if (tg?.HapticFeedback) tg.HapticFeedback.selectionChanged();
+            updateSummary();
+        }
+
+        // =============== RENDER QUALITIES ===============
+        function renderQualities() {
+            const grid = document.getElementById('qualityGrid');
+            grid.innerHTML = QUALITIES.map((q, i) => `
+                <button class="option-btn ${q.value === state.quality ? 'selected' : ''}" onclick="selectQuality(${i})" data-q-idx="${i}">
+                    ${q.label}
+                    <span class="opt-label">${q.sub}</span>
+                </button>
+            `).join('');
+        }
+
+        function selectQuality(idx) {
+            const q = QUALITIES[idx];
+            state.quality = q.value;
+            state.qualityName = q.sub;
+            document.querySelectorAll('[data-q-idx]').forEach(b => b.classList.remove('selected'));
+            document.querySelector(`[data-q-idx="${idx}"]`).classList.add('selected');
+            if (tg?.HapticFeedback) tg.HapticFeedback.selectionChanged();
+            updateSummary();
+        }
+
+        // =============== RENDER FPS ===============
+        function renderFPS() {
+            const wrap = document.getElementById('fpsChips');
+            wrap.innerHTML = FPS_OPTIONS.map((f, i) => `
+                <button class="preset-chip ${f === state.fps ? 'selected' : ''}" onclick="selectFPS(${i})" data-fps-idx="${i}">
+                    ${f} FPS
+                </button>
+            `).join('');
+        }
+
+        function selectFPS(idx) {
+            state.fps = FPS_OPTIONS[idx];
+            document.querySelectorAll('[data-fps-idx]').forEach(b => b.classList.remove('selected'));
+            document.querySelector(`[data-fps-idx="${idx}"]`).classList.add('selected');
+            if (tg?.HapticFeedback) tg.HapticFeedback.selectionChanged();
+            updateSummary();
+        }
+
+        // =============== SETTINGS SUMMARY ===============
+        function updateSummary() {
+            const el = document.getElementById('settingsSummary');
+            el.innerHTML = `
+                <div class="summary-tag"><i class="fas fa-palette"></i>${state.bgName}</div>
+                <div class="summary-tag"><i class="fas fa-expand"></i>${state.resName}</div>
+                <div class="summary-tag"><i class="fas fa-star"></i>${state.qualityName}</div>
+                <div class="summary-tag"><i class="fas fa-gauge-high"></i>${state.fps} FPS</div>
+            `;
+        }
+
+        // =============== CONVERT ===============
+        function startConvert() {
+            const input = document.getElementById('emojiInput').value.trim();
+            if (!input) {
+                showToast('Введите Emoji ID', 'error');
+                document.getElementById('emojiInput').classList.add('shake');
+                setTimeout(() => document.getElementById('emojiInput').classList.remove('shake'), 500);
+                if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+                return;
+            }
+
+            const btn = document.getElementById('convertBtn');
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            // Show status
+            const statusArea = document.getElementById('statusArea');
+            const statusCard = document.getElementById('statusCard');
+            const statusIcon = document.getElementById('statusIcon');
+            const statusTitle = document.getElementById('statusTitle');
+            const statusText = document.getElementById('statusText');
+            const progressWrap = document.getElementById('progressWrap');
+            const progressBar = document.getElementById('progressBar');
+
+            statusCard.className = 'status-card';
+            statusIcon.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            statusIcon.style.background = 'rgba(120, 231, 0, 0.1)';
+            statusIcon.style.color = 'var(--green-1)';
+            statusTitle.textContent = 'Конвертация...';
+            statusText.textContent = 'Отправляю данные боту';
+            progressWrap.style.display = 'block';
+            progressBar.style.width = '0%';
+            statusArea.classList.add('visible');
+
+            if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+
+            // Animate progress
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress > 90) progress = 90;
+                progressBar.style.width = progress + '%';
+            }, 300);
+
+            // Send data to bot
+            const data = {
+                action: 'convert',
+                emoji_id: input,
+                bg: state.bg,
+                resolution: state.resolution,
+                quality: state.quality,
+                fps: state.fps
+            };
+
+            // Attempt to send to bot via Telegram WebApp
+            if (tg) {
+                tg.sendData(JSON.stringify(data));
+            }
+
+            // Simulate response (replace with real bot communication)
+            setTimeout(() => {
+                clearInterval(progressInterval);
+                progressBar.style.width = '100%';
+
+                setTimeout(() => {
+                    const success = Math.random() > 0.15;
+
+                    if (success) {
+                        statusCard.className = 'status-card success';
+                        statusIcon.innerHTML = '<i class="fas fa-check"></i>';
+                        statusTitle.textContent = 'Готово!';
+                        statusText.textContent = 'Видео отправлено вам в чат с ботом';
+                        progressWrap.style.display = 'none';
+                        showToast('Видео успешно создано!', 'success');
+                        if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+
+                        addHistory(input, true);
+                    } else {
+                        statusCard.className = 'status-card error';
+                        statusIcon.innerHTML = '<i class="fas fa-xmark"></i>';
+                        statusIcon.style.background = 'rgba(231, 76, 60, 0.1)';
+                        statusIcon.style.color = '#E74C3C';
+                        statusTitle.textContent = 'Ошибка';
+                        statusText.textContent = 'Не удалось конвертировать. Проверьте ID.';
+                        progressWrap.style.display = 'none';
+                        showToast('Ошибка конвертации', 'error');
+                        if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+
+                        addHistory(input, false);
+                    }
+
+                    btn.classList.remove('loading');
+                    btn.disabled = false;
+                }, 500);
+            }, 2500);
+        }
+
+        // =============== HISTORY ===============
+        function addHistory(emojiId, success) {
+            const item = {
+                id: Date.now(),
+                emojiId,
+                success,
+                date: new Date().toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
+                settings: `${state.resName} · ${state.qualityName} · ${state.fps}fps`
+            };
+            state.history.unshift(item);
+            if (state.history.length > 50) state.history.pop();
+            localStorage.setItem('e2v_history', JSON.stringify(state.history));
+            renderHistory();
+            updateHistoryStats();
+        }
+
+        function renderHistory() {
+            const el = document.getElementById('historyList');
+            if (state.history.length === 0) {
+                el.innerHTML = `
+                    <div class="history-empty">
+                        <i class="fas fa-inbox"></i>
+                        <p>Пока нет конвертаций.<br>Начните с вкладки «Конвертер»!</p>
+                    </div>`;
+                return;
+            }
+            el.innerHTML = state.history.map((h, i) => `
+                <div class="history-item" style="animation-delay:${i * 0.05}s">
+                    <div class="hi-icon" style="background:${h.success ? 'rgba(120,231,0,0.1)' : 'rgba(231,76,60,0.1)'}; color:${h.success ? 'var(--green-1)' : '#E74C3C'};">
+                        <i class="fas ${h.success ? 'fa-check' : 'fa-xmark'}"></i>
+                    </div>
+                    <div class="hi-info">
+                        <h4>ID: ${h.emojiId}</h4>
+                        <span>${h.date} · ${h.settings}</span>
+                    </div>
+                    <div class="hi-status ${h.success ? 'done' : 'fail'}">
+                        ${h.success ? 'Готово' : 'Ошибка'}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateHistoryStats() {
+            document.getElementById('statTotal').textContent = state.history.length;
+            document.getElementById('statSuccess').textContent = state.history.filter(h => h.success).length;
+        }
+
+        // =============== TOASTS ===============
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const icons = { success: 'fa-circle-check', error: 'fa-circle-xmark', info: 'fa-circle-info' };
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<i class="fas ${icons[type]}"></i><span>${message}</span>`;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.add('toast-out');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // =============== RIPPLE EFFECT ===============
+        document.addEventListener('click', function(e) {
+            const rippleEl = e.target.closest('.ripple');
+            if (!rippleEl) return;
+            const rect = rippleEl.getBoundingClientRect();
+            const size = Math.max(rect.width, rect.height);
+            const wave = document.createElement('span');
+            wave.className = 'ripple-wave';
+            wave.style.width = wave.style.height = size + 'px';
+            wave.style.left = (e.clientX - rect.left - size / 2) + 'px';
+            wave.style.top = (e.clientY - rect.top - size / 2) + 'px';
+            rippleEl.appendChild(wave);
+            setTimeout(() => wave.remove(), 600);
+        });
+
+        // =============== KEYBOARD ===============
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const focused = document.activeElement;
+                if (focused === document.getElementById('emojiInput')) {
+                    startConvert();
+                } else if (focused === document.getElementById('hexInput')) {
+                    applyCustomHex();
+                }
+            }
+        });
+
+        // =============== INIT ===============
+        init();
+        renderHistory();
+    </script>
+</body>
+</html>

@@ -982,7 +982,7 @@
                 <div class="card">
                     <div class="input-area">
                         <div class="emoji-input-wrap">
-                            <textarea class="emoji-input emoji-textarea" id="emojiLinksInput" placeholder="Вставьте ссылки вида t.me/addemoji/123456789012 (можно несколько строк)" autocomplete="off"></textarea>
+                            <textarea class="emoji-input emoji-textarea" id="emojiLinksInput" placeholder="Вставьте ссылки вида t.me/addemoji/NazvaniyeSeta (можно несколько строк)" autocomplete="off"></textarea>
                         </div>
                         <div class="input-hint">
                             <i class="fas fa-lightbulb"></i>
@@ -1284,23 +1284,14 @@
 
             if (!text) return res;
 
-            // t.me/addemoji/<id>
-            const re1 = /(?:https?:\/\/)?(?:t\.me|telegram\.me)\/addemoji\/(\d+)/gi;
+            // t.me/addemoji/<setName> — имя сета (буквы, цифры, _)
+            const re1 = /(?:https?:\/\/)?(?:t\.me|telegram\.me)\/addemoji\/([A-Za-z0-9_]+)/gi;
             let m;
             while ((m = re1.exec(text)) !== null) {
-                const id = (m[1] || "").trim();
-                if (!id || seen.has(id)) continue;
-                seen.add(id);
-                res.push(id);
-            }
-
-            // fall back: any long-ish numeric tokens
-            const re2 = /\b\d{6,20}\b/g;
-            while ((m = re2.exec(text)) !== null) {
-                const id = (m[0] || "").trim();
-                if (!id || seen.has(id)) continue;
-                seen.add(id);
-                res.push(id);
+                const name = (m[1] || "").trim();
+                if (!name || seen.has(name)) continue;
+                seen.add(name);
+                res.push(name);
             }
 
             return res;
@@ -1343,13 +1334,13 @@
             }
 
             state.emojiIds = ids;
-            list.innerHTML = ids.map(id => `
+            list.innerHTML = ids.map(name => `
                 <label class="emoji-check-row">
-                    <input type="checkbox" class="emoji-check" value="${id}" checked onchange="onEmojiPickChanged()">
+                    <input type="checkbox" class="emoji-check" value="${name}" checked onchange="onEmojiPickChanged()">
                     <div class="emoji-check-info">
-                        <div class="emoji-check-id">ID: ${id}</div>
+                        <div class="emoji-check-id">${name}</div>
                         <div class="emoji-check-link">
-                            <a href="https://t.me/addemoji/${id}" target="_blank" rel="noopener noreferrer">t.me/addemoji/${id}</a>
+                            <a href="https://t.me/addemoji/${name}" target="_blank" rel="noopener noreferrer">t.me/addemoji/${name}</a>
                         </div>
                     </div>
                 </label>
@@ -1622,7 +1613,7 @@
 
             const data = {
                 action: 'convert',
-                emoji_ids: selected,
+                set_names: selected,
                 bg: state.bg,
                 resolution: state.resolution,
                 quality: state.quality,
@@ -1646,7 +1637,7 @@
                 statusTitle.textContent = 'Отправлено!';
                 statusText.textContent = 'Ждите видео в чате с ботом.';
                 progressWrap.style.display = 'none';
-                showToast(`Запрос отправлен: ${selected.length} эмодзи`, 'info');
+                showToast(`Запрос отправлен: ${selected.length} сет(ов)`, 'info');
                 if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
             } catch (e) {
                 clearInterval(progressInterval);

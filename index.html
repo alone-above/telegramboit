@@ -874,6 +874,60 @@
         }
         .feature-item h4 { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
         .feature-item p { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
+        /* === EMOJI CHECK PICKER === */
+        .emoji-textarea {
+            resize: none;
+            min-height: 92px;
+            line-height: 1.35;
+            padding-top: 14px;
+        }
+        .emoji-picker-list {
+            margin-top: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .emoji-check-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 14px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: rgba(26, 30, 28, 0.75);
+            transition: var(--transition);
+        }
+        .emoji-check-row:hover {
+            border-color: rgba(120, 231, 0, 0.2);
+            box-shadow: 0 0 26px rgba(120, 231, 0, 0.08);
+        }
+        .emoji-check-row input[type="checkbox"] {
+            margin-top: 2px;
+            width: 18px;
+            height: 18px;
+            accent-color: var(--green-1);
+        }
+        .emoji-check-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .emoji-check-id {
+            font-size: 13px;
+            font-weight: 800;
+            color: var(--text-primary);
+            word-break: break-all;
+        }
+        .emoji-check-link {
+            margin-top: 4px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .emoji-check-link a {
+            color: var(--green-4);
+            text-decoration: none;
+        }
+        .emoji-check-link a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -922,18 +976,34 @@
         <div class="tab-page active" id="tab-convert">
             <div class="section">
                 <div class="section-label">
-                    <i class="fas fa-paper-plane"></i>
-                    Emoji ID или стикер
+                    <i class="fas fa-link"></i>
+                    Ссылки на Telegram-emoji
                 </div>
                 <div class="card">
                     <div class="input-area">
                         <div class="emoji-input-wrap">
-                            <input type="text" class="emoji-input" id="emojiInput" placeholder="Введите Custom Emoji ID..." autocomplete="off" inputmode="numeric">
+                            <textarea class="emoji-input emoji-textarea" id="emojiLinksInput" placeholder="Вставьте ссылки вида t.me/addemoji/123456789012 (можно несколько строк)" autocomplete="off"></textarea>
                         </div>
                         <div class="input-hint">
                             <i class="fas fa-lightbulb"></i>
-                            Отправьте premium emoji боту или введите его ID
+                            Вставьте ссылки — ниже появится список. Выберите эмодзи галочками для конвертации.
                         </div>
+
+                        <div style="margin-top: 12px; display:flex; align-items:center; justify-content:space-between; gap: 12px;">
+                            <div style="font-size:12px; color:var(--text-muted); font-weight:700;">
+                                Выбрано: <span id="emojiSelectedCount">0</span>
+                            </div>
+                            <div style="display:flex; gap: 8px;">
+                                <button class="option-btn" style="padding:10px 12px; white-space:nowrap;" onclick="selectAllEmojis(true)">
+                                    <i class="fas fa-square-check" style="margin-right:6px; color:var(--green-2);"></i>Все
+                                </button>
+                                <button class="option-btn" style="padding:10px 12px; white-space:nowrap;" onclick="selectAllEmojis(false)">
+                                    <i class="fas fa-square-xmark" style="margin-right:6px; color:var(--green-2);"></i>Снять
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="emojiPickerList" class="emoji-picker-list"></div>
                     </div>
                 </div>
             </div>
@@ -1153,6 +1223,7 @@
             quality: 18,
             qualityName: 'Высокое',
             fps: 30,
+            emojiIds: [],
             history: JSON.parse(localStorage.getItem('e2v_history') || '[]'),
         };
 
@@ -1200,6 +1271,105 @@
             renderFPS();
             updateSummary();
             updateHistoryStats();
+            setupEmojiPicker();
+        }
+
+        // =============== EMOJI PICKER ===============
+        function extractEmojiIdsFromText(text) {
+            const res = [];
+            const seen = new Set();
+
+            if (!text) return res;
+
+            // t.me/addemoji/<id>
+            const re1 = /(?:https?:\/\/)?(?:t\.me|telegram\.me)\/addemoji\/(\d+)/gi;
+            let m;
+            while ((m = re1.exec(text)) !== null) {
+                const id = (m[1] || "").trim();
+                if (!id || seen.has(id)) continue;
+                seen.add(id);
+                res.push(id);
+            }
+
+            // fall back: any long-ish numeric tokens
+            const re2 = /\b\d{6,20}\b/g;
+            while ((m = re2.exec(text)) !== null) {
+                const id = (m[0] || "").trim();
+                if (!id || seen.has(id)) continue;
+                seen.add(id);
+                res.push(id);
+            }
+
+            return res;
+        }
+
+        function updateEmojiSelectedCount() {
+            const el = document.getElementById('emojiSelectedCount');
+            if (!el) return;
+            const selected = document.querySelectorAll('.emoji-check:checked');
+            el.textContent = selected.length;
+        }
+
+        function onEmojiPickChanged() {
+            updateEmojiSelectedCount();
+        }
+
+        function selectAllEmojis(flag) {
+            document.querySelectorAll('.emoji-check').forEach(cb => {
+                cb.checked = !!flag;
+            });
+            updateEmojiSelectedCount();
+            if (tg?.HapticFeedback) tg.HapticFeedback.selectionChanged();
+        }
+
+        function renderEmojiPicker(ids) {
+            const list = document.getElementById('emojiPickerList');
+            if (!list) return;
+
+            if (!ids || ids.length === 0) {
+                list.innerHTML = `
+                    <div class="history-empty" style="padding:28px 18px;">
+                        <i class="fas fa-link" style="font-size:44px; margin-bottom:10px; opacity:0.3;"></i>
+                        <p>Вставьте ссылки на Telegram-emoji (t.me/addemoji/…)</p>
+                    </div>`;
+                updateEmojiSelectedCount();
+                state.emojiIds = [];
+                return;
+            }
+
+            state.emojiIds = ids;
+            list.innerHTML = ids.map(id => `
+                <label class="emoji-check-row">
+                    <input type="checkbox" class="emoji-check" value="${id}" checked onchange="onEmojiPickChanged()">
+                    <div class="emoji-check-info">
+                        <div class="emoji-check-id">ID: ${id}</div>
+                        <div class="emoji-check-link">
+                            <a href="https://t.me/addemoji/${id}" target="_blank" rel="noopener noreferrer">t.me/addemoji/${id}</a>
+                        </div>
+                    </div>
+                </label>
+            `).join('');
+
+            updateEmojiSelectedCount();
+        }
+
+        function setupEmojiPicker() {
+            const inputEl = document.getElementById('emojiLinksInput');
+            if (!inputEl) return;
+
+            let t = null;
+            const rerender = () => {
+                const ids = extractEmojiIdsFromText(inputEl.value);
+                renderEmojiPicker(ids);
+            };
+
+            inputEl.addEventListener('input', () => {
+                clearTimeout(t);
+                t = setTimeout(rerender, 200);
+            });
+
+            // initial empty state
+            renderEmojiPicker([]);
         }
 
         // =============== TABS ===============
@@ -1364,11 +1534,12 @@
 
         // =============== CONVERT ===============
         function startConvert() {
-            const input = document.getElementById('emojiInput').value.trim();
-            if (!input) {
-                showToast('Введите Emoji ID', 'error');
-                document.getElementById('emojiInput').classList.add('shake');
-                setTimeout(() => document.getElementById('emojiInput').classList.remove('shake'), 500);
+            const selected = Array.from(document.querySelectorAll('.emoji-check:checked')).map(cb => cb.value);
+            if (!selected.length) {
+                showToast('Выберите хотя бы один эмодзи', 'error');
+                const el = document.getElementById('emojiLinksInput');
+                if (el) el.classList.add('shake');
+                setTimeout(() => { if (el) el.classList.remove('shake'); }, 500);
                 if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
                 return;
             }
@@ -1398,65 +1569,57 @@
 
             if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
 
-            // Animate progress
+            // Animate progress briefly (we don't get immediate response in WebApp)
             let progress = 0;
             const progressInterval = setInterval(() => {
-                progress += Math.random() * 15;
+                progress += Math.random() * 18;
                 if (progress > 90) progress = 90;
                 progressBar.style.width = progress + '%';
-            }, 300);
+            }, 200);
 
-            // Send data to bot
             const data = {
                 action: 'convert',
-                emoji_id: input,
+                emoji_ids: selected,
                 bg: state.bg,
                 resolution: state.resolution,
                 quality: state.quality,
                 fps: state.fps
             };
 
-            // Attempt to send to bot via Telegram WebApp
-            if (tg) {
-                tg.sendData(JSON.stringify(data));
-            }
+            try {
+                if (tg) {
+                    tg.sendData(JSON.stringify(data));
+                } else {
+                    throw new Error('Telegram WebApp is not available');
+                }
 
-            // Simulate response (replace with real bot communication)
-            setTimeout(() => {
                 clearInterval(progressInterval);
                 progressBar.style.width = '100%';
 
-                setTimeout(() => {
-                    const success = Math.random() > 0.15;
-
-                    if (success) {
-                        statusCard.className = 'status-card success';
-                        statusIcon.innerHTML = '<i class="fas fa-check"></i>';
-                        statusTitle.textContent = 'Готово!';
-                        statusText.textContent = 'Видео отправлено вам в чат с ботом';
-                        progressWrap.style.display = 'none';
-                        showToast('Видео успешно создано!', 'success');
-                        if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-
-                        addHistory(input, true);
-                    } else {
-                        statusCard.className = 'status-card error';
-                        statusIcon.innerHTML = '<i class="fas fa-xmark"></i>';
-                        statusIcon.style.background = 'rgba(231, 76, 60, 0.1)';
-                        statusIcon.style.color = '#E74C3C';
-                        statusTitle.textContent = 'Ошибка';
-                        statusText.textContent = 'Не удалось конвертировать. Проверьте ID.';
-                        progressWrap.style.display = 'none';
-                        showToast('Ошибка конвертации', 'error');
-                        if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
-
-                        addHistory(input, false);
-                    }
-
-                    btn.classList.remove('loading');
-                    btn.disabled = false;
-                }, 500);
-            }, 2500);
+                statusCard.className = 'status-card success';
+                statusIcon.innerHTML = '<i class="fas fa-paper-plane"></i>';
+                statusIcon.style.background = 'rgba(120, 231, 0, 0.1)';
+                statusIcon.style.color = 'var(--green-1)';
+                statusTitle.textContent = 'Отправлено!';
+                statusText.textContent = 'Ждите видео в чате с ботом.';
+                progressWrap.style.display = 'none';
+                showToast(`Запрос отправлен: ${selected.length} эмодзи`, 'info');
+                if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+            } catch (e) {
+                clearInterval(progressInterval);
+                statusCard.className = 'status-card error';
+                statusIcon.innerHTML = '<i class="fas fa-xmark"></i>';
+                statusIcon.style.background = 'rgba(231, 76, 60, 0.1)';
+                statusIcon.style.color = '#E74C3C';
+                statusTitle.textContent = 'Ошибка';
+                statusText.textContent = 'Не удалось отправить данные боту.';
+                progressWrap.style.display = 'none';
+                showToast('Ошибка отправки', 'error');
+                if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
         }
 
         // =============== HISTORY ===============
@@ -1540,10 +1703,10 @@
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 const focused = document.activeElement;
-                if (focused === document.getElementById('emojiInput')) {
-                    startConvert();
-                } else if (focused === document.getElementById('hexInput')) {
+                if (focused === document.getElementById('hexInput')) {
                     applyCustomHex();
+                } else if (focused === document.getElementById('emojiLinksInput')) {
+                    if (e.ctrlKey || e.metaKey) startConvert();
                 }
             }
         });

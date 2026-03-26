@@ -1000,6 +1000,9 @@
                                 <button class="option-btn" style="padding:10px 12px; white-space:nowrap;" onclick="selectAllEmojis(false)">
                                     <i class="fas fa-square-xmark" style="margin-right:6px; color:var(--green-2);"></i>Снять
                                 </button>
+                                <button class="option-btn" style="padding:10px 12px; white-space:nowrap;" onclick="scanEmojis()">
+                                    <i class="fas fa-magnifying-glass" style="margin-right:6px; color:var(--green-2);"></i>Сканировать
+                                </button>
                             </div>
                         </div>
 
@@ -1325,6 +1328,8 @@
         function renderEmojiPicker(ids) {
             const list = document.getElementById('emojiPickerList');
             if (!list) return;
+            list.style.display = 'flex';
+            list.style.flexDirection = 'column';
 
             if (!ids || ids.length === 0) {
                 list.innerHTML = `
@@ -1363,13 +1368,43 @@
                 renderEmojiPicker(ids);
             };
 
+            // вынесем общую логику скана в глобальную функцию
+            window.scanEmojis = () => rerender();
+
             inputEl.addEventListener('input', () => {
                 clearTimeout(t);
                 t = setTimeout(rerender, 200);
             });
+            inputEl.addEventListener('paste', () => {
+                clearTimeout(t);
+                t = setTimeout(rerender, 200);
+            });
+            inputEl.addEventListener('change', () => {
+                clearTimeout(t);
+                t = setTimeout(rerender, 200);
+            });
+            inputEl.addEventListener('blur', () => {
+                clearTimeout(t);
+                t = setTimeout(rerender, 200);
+            });
+            inputEl.addEventListener('keyup', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    clearTimeout(t);
+                    t = setTimeout(rerender, 150);
+                }
+            });
 
             // initial empty state
             renderEmojiPicker([]);
+        }
+
+        // fallback на случай, если кнопка появилась до инициализации
+        function scanEmojis() {
+            const inputEl = document.getElementById('emojiLinksInput');
+            if (!inputEl) return;
+            const ids = extractEmojiIdsFromText(inputEl.value);
+            renderEmojiPicker(ids);
         }
 
         // =============== TABS ===============
@@ -1534,6 +1569,14 @@
 
         // =============== CONVERT ===============
         function startConvert() {
+            // если список по какой-то причине не успел отрендериться (например, глючная вставка),
+            // пересканим поле и пересоздадим чекбоксы.
+            const inputEl = document.getElementById('emojiLinksInput');
+            if (inputEl) {
+                const ids = extractEmojiIdsFromText(inputEl.value);
+                if (ids && ids.length) renderEmojiPicker(ids);
+            }
+
             const selected = Array.from(document.querySelectorAll('.emoji-check:checked')).map(cb => cb.value);
             if (!selected.length) {
                 showToast('Выберите хотя бы один эмодзи', 'error');

@@ -1,0 +1,64 @@
+{
+  "shop": {
+    "name": "Alone Above Shop",
+    "tagline": "Эксклюзивный стритвир для тех, кто не боится выделяться",
+    "description": "Премиальное качество и уникальный стиль. Мы подбираем лучшие бренды и уникальные коллекции для тех, кто ценит стиль.",
+    "logo": "assets/logo.svg",
+    "logo_dark": "assets/logo.svg",
+    "favicon": "assets/logo.svg"
+  },
+  "colors": {
+    "primary": "#78E700",
+    "primary_dark": "#4E9600",
+    "primary_light": "#9BF33D",
+    "primary_pale": "#B3F36D",
+    "primary_deep": "#6FAD2B",
+    "accent": "#78E700"
+  },
+  "hero": {
+    "title": "Alone",
+    "title_accent": "Above",
+    "subtitle": "Shop",
+    "description": "Эксклюзивный стритвир для тех, кто не боится выделяться. Премиальное качество и уникальный стиль.",
+    "bg_image": "https://images.unsplash.com/photo-1441984904996-e0b6ba687e04?w=1200&q=80&fit=crop",
+    "btn_catalog": "Смотреть каталог",
+    "btn_about": "О нас"
+  },
+  "features": [
+    { "icon": "truck",   "title": "Быстрая доставка",   "desc": "По всему Казахстану" },
+    { "icon": "shield",  "title": "Гарантия качества",  "desc": "Оригинальные товары" },
+    { "icon": "refresh", "title": "Возврат 14 дней",    "desc": "Без лишних вопросов" },
+    { "icon": "gift",    "title": "Бонусная программа", "desc": "До 10% кэшбэка" }
+  ],
+  "sale_banner": {
+    "title": "Скидки до",
+    "percent": "30%",
+    "subtitle": "На всю коллекцию. Успейте приобрести по выгодной цене!",
+    "btn": "К товарам",
+    "bg_image": "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1200&q=80&fit=crop"
+  },
+  "telegram": {
+    "channel": "https://t.me/aloneaboveshop",
+    "support": "https://t.me/aloneabovesupport",
+    "channel_name": "@aloneaboveshop"
+  },
+  "contact": {
+    "email": "support@aloneabove.shop",
+    "work_hours": "10:00 — 22:00",
+    "kaspi_phone": "+7XXXXXXXXXX"
+  },
+  "api": {
+    "base_url": "https://your-api-url.railway.app"
+  },
+  "links": {
+    "catalog_btn": "#catalog",
+    "about_btn": "#about",
+    "support_btn": "#support",
+    "instagram": "https://instagram.com/aloneaboveshop"
+  },
+  "sections": {
+    "show_drops": true,
+    "show_bonuses": true,
+    "show_partnership": true
+  }
+}

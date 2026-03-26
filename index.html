@@ -1324,6 +1324,27 @@
             tg.setBackgroundColor('#0D0F0E');
         }
 
+        // Токен бота: берём из start_param (бот открывает WebApp с ?startapp=TOKEN)
+        // либо из hash-параметра для dev-режима: index.html#token=123:ABC
+        function getBotToken() {
+            // 1. Из start_param (передаётся ботом при открытии WebApp)
+            const sp = tg?.initDataUnsafe?.start_param;
+            if (sp && sp.includes(':')) return sp;
+
+            // 2. Из URL hash (#token=123:ABC)
+            const hash = location.hash.replace('#', '');
+            const params = new URLSearchParams(hash);
+            const t = params.get('token');
+            if (t && t.includes(':')) return t;
+
+            // 3. Из URL query (?token=123:ABC) — для локальной разработки
+            const qp = new URLSearchParams(location.search);
+            const qt = qp.get('token');
+            if (qt && qt.includes(':')) return qt;
+
+            return null;
+        }
+
         // =============== STATE ===============
         const state = {
             bg: '#000000',
@@ -1502,12 +1523,21 @@
             updateEmojiSelectedCount();
         }
 
-        // Загрузить стикерсет через бэкенд бота
-        // Бэкенд должен отдавать GET /api/stickerset?name=<setName>
-        // и возвращать JSON: { ok: true, title: "...", stickers: [{custom_emoji_id, emoji, thumb_url}] }
+        // Загрузить стикерсет напрямую через Telegram Bot API
         async function fetchStickerSet(setName) {
             const statusEl = document.getElementById('emojiSetStatus');
             const list = document.getElementById('emojiPickerList');
+
+            const token = getBotToken();
+            if (!token) {
+                statusEl.innerHTML = `
+                    <div class="stickerset-header" style="border-color:rgba(231,76,60,0.3); color:#E74C3C; background:rgba(231,76,60,0.06);">
+                        <i class="fas fa-key" style="color:#E74C3C;"></i>
+                        Токен бота не найден. Откройте WebApp через бота или добавьте <code style="font-size:10px;">#token=YOUR_TOKEN</code> к URL.
+                    </div>`;
+                list.innerHTML = '';
+                return;
+            }
 
             statusEl.innerHTML = `
                 <div class="stickerset-loading">
@@ -1517,20 +1547,69 @@
             list.innerHTML = '';
 
             try {
-                const res = await fetch(`/api/stickerset?name=${encodeURIComponent(setName)}`);
-                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const res = await fetch(
+                    `https://api.telegram.org/bot${token}/getStickerSet?name=${encodeURIComponent(setName)}`
+                );
                 const data = await res.json();
-                if (!data.ok) throw new Error(data.description || 'Ошибка API');
-                renderStickerTable(setName, data.title, data.stickers);
-                showToast(`Загружено ${data.stickers.length} эмодзи`, 'success');
+
+                if (!data.ok) {
+                    throw new Error(data.description || 'Ошибка Telegram API');
+                }
+
+                const set = data.result;
+                // Формируем массив стикеров с превью через file_id
+                const stickers = set.stickers.map(s => ({
+                    custom_emoji_id: s.custom_emoji_id || s.file_unique_id,
+                    emoji: s.emoji || '🎭',
+                    file_id: s.file_id,
+                    // превью грузим через getFile → но это требует токен, поэтому используем emoji как превью
+                    thumb_url: s.thumbnail
+                        ? `https://api.telegram.org/file/bot${token}/${s.thumbnail.file_path || ''}`
+                        : null
+                }));
+
+                // Для thumbnail нужен file_path — подгрузим асинхронно
+                renderStickerTable(setName, set.title, stickers);
+                showToast(`Загружено ${stickers.length} эмодзи`, 'success');
+
+                // Асинхронно подгружаем превью через getFile
+                loadThumbnails(token, set.stickers);
+
             } catch (e) {
                 statusEl.innerHTML = `
                     <div class="stickerset-header" style="border-color:rgba(231,76,60,0.3); color:#E74C3C; background:rgba(231,76,60,0.06);">
                         <i class="fas fa-triangle-exclamation" style="color:#E74C3C;"></i>
-                        Ошибка загрузки «${setName}»: ${e.message}
+                        Ошибка: ${e.message}
                     </div>`;
                 list.innerHTML = '';
                 updateEmojiSelectedCount();
+            }
+        }
+
+        // Асинхронно загружаем превью для каждого стикера и вставляем в DOM
+        async function loadThumbnails(token, stickers) {
+            for (const s of stickers) {
+                const id = s.custom_emoji_id || s.file_unique_id;
+                const thumbFileId = s.thumbnail?.file_id || s.thumb?.file_id;
+                if (!thumbFileId) continue;
+
+                const row = document.querySelector(`[data-id="${id}"] .ecr-preview`);
+                if (!row) continue;
+
+                try {
+                    const res = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${thumbFileId}`);
+                    const data = await res.json();
+                    if (!data.ok || !data.result?.file_path) continue;
+
+                    const url = `https://api.telegram.org/file/bot${token}/${data.result.file_path}`;
+                    const ext = data.result.file_path.split('.').pop().toLowerCase();
+
+                    if (ext === 'webm' || ext === 'mp4') {
+                        row.innerHTML = `<video src="${url}" autoplay loop muted playsinline></video>`;
+                    } else {
+                        row.innerHTML = `<img src="${url}" alt="" loading="lazy">`;
+                    }
+                } catch (_) { /* пропускаем */ }
             }
         }
 

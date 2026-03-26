@@ -882,52 +882,157 @@
             line-height: 1.35;
             padding-top: 14px;
         }
-        .emoji-picker-list {
+
+        /* Stickerpack header */
+        .stickerset-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            background: rgba(120, 231, 0, 0.06);
+            border: 1px solid rgba(120, 231, 0, 0.18);
+            border-radius: var(--radius-sm);
+            margin-top: 14px;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--green-4);
+        }
+        .stickerset-header i { color: var(--green-2); font-size: 14px; }
+        .stickerset-header .set-count {
+            margin-left: auto;
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+        .stickerset-loading {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px;
+            color: var(--text-muted);
+            font-size: 13px;
             margin-top: 12px;
+        }
+        .stickerset-loading i { color: var(--green-2); }
+
+        /* Table */
+        .emoji-picker-list {
+            margin-top: 0;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 0;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            overflow: hidden;
+        }
+        .emoji-table-head {
+            display: grid;
+            grid-template-columns: 32px 52px 1fr auto;
+            align-items: center;
+            gap: 0;
+            padding: 8px 12px;
+            background: rgba(255,255,255,0.03);
+            border-bottom: 1px solid var(--border);
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
         }
         .emoji-check-row {
+            display: grid;
+            grid-template-columns: 32px 52px 1fr auto;
+            align-items: center;
+            gap: 0;
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-card);
+            transition: background 0.15s;
+            cursor: pointer;
+        }
+        .emoji-check-row:last-child { border-bottom: none; }
+        .emoji-check-row:hover { background: var(--bg-card-hover); }
+        .emoji-check-row.row-checked { background: rgba(120, 231, 0, 0.04); }
+
+        .ecr-check {
             display: flex;
-            align-items: flex-start;
-            gap: 12px;
-            padding: 12px 14px;
-            border-radius: var(--radius-sm);
-            border: 1px solid var(--border);
-            background: rgba(26, 30, 28, 0.75);
-            transition: var(--transition);
+            align-items: center;
+            justify-content: center;
         }
-        .emoji-check-row:hover {
-            border-color: rgba(120, 231, 0, 0.2);
-            box-shadow: 0 0 26px rgba(120, 231, 0, 0.08);
-        }
-        .emoji-check-row input[type="checkbox"] {
-            margin-top: 2px;
-            width: 18px;
-            height: 18px;
+        .ecr-check input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
             accent-color: var(--green-1);
+            cursor: pointer;
         }
-        .emoji-check-info {
-            flex: 1;
+        .ecr-preview {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+        }
+        .ecr-preview img,
+        .ecr-preview video {
+            width: 36px;
+            height: 36px;
+            object-fit: contain;
+            border-radius: 6px;
+        }
+        .ecr-preview .emoji-placeholder {
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            background: rgba(120,231,0,0.08);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+        .ecr-info {
+            padding: 0 8px;
             min-width: 0;
         }
-        .emoji-check-id {
-            font-size: 13px;
-            font-weight: 800;
-            color: var(--text-primary);
-            word-break: break-all;
-        }
-        .emoji-check-link {
-            margin-top: 4px;
+        .ecr-id {
             font-size: 12px;
+            font-weight: 700;
+            color: var(--text-primary);
+            font-family: 'Inter', monospace;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .ecr-html {
+            font-size: 10px;
             color: var(--text-muted);
+            font-family: monospace;
+            margin-top: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: pointer;
         }
-        .emoji-check-link a {
+        .ecr-html:hover { color: var(--green-4); }
+        .ecr-copy {
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-muted);
+            padding: 5px 8px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: var(--transition);
+            white-space: nowrap;
+            font-family: 'Inter', sans-serif;
+        }
+        .ecr-copy:hover {
+            border-color: var(--green-1);
             color: var(--green-4);
-            text-decoration: none;
         }
-        .emoji-check-link a:hover { text-decoration: underline; }
+        .ecr-copy.copied {
+            border-color: var(--green-1);
+            color: var(--green-1);
+        }
     </style>
 </head>
 <body>
@@ -1006,7 +1111,9 @@
                             </div>
                         </div>
 
-                        <div id="emojiPickerList" class="emoji-picker-list"></div>
+                        <div id="emojiSetStatus"></div>
+
+                        <div id="emojiPickerList" class="emoji-picker-list" style="margin-top:12px;"></div>
                     </div>
                 </div>
             </div>
@@ -1304,49 +1411,163 @@
             el.textContent = selected.length;
         }
 
-        function onEmojiPickChanged() {
+        function onEmojiPickChanged(cb) {
+            const row = cb.closest('.emoji-check-row');
+            if (row) row.classList.toggle('row-checked', cb.checked);
             updateEmojiSelectedCount();
         }
 
         function selectAllEmojis(flag) {
             document.querySelectorAll('.emoji-check').forEach(cb => {
                 cb.checked = !!flag;
+                const row = cb.closest('.emoji-check-row');
+                if (row) row.classList.toggle('row-checked', !!flag);
             });
             updateEmojiSelectedCount();
             if (tg?.HapticFeedback) tg.HapticFeedback.selectionChanged();
         }
 
-        function renderEmojiPicker(ids) {
+        function copyHtml(id, btn) {
+            const html = `<tg-emoji emoji-id="${id}">😀</tg-emoji>`;
+            navigator.clipboard.writeText(html).then(() => {
+                btn.textContent = '✓ Скопировано';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = 'Копировать';
+                    btn.classList.remove('copied');
+                }, 1500);
+            }).catch(() => {
+                showToast('Не удалось скопировать', 'error');
+            });
+        }
+
+        // Рендер таблицы эмодзи из данных getStickerSet
+        // stickers = [{file_id, emoji, custom_emoji_id}]  — поля из Telegram API
+        // setName — название сета
+        function renderStickerTable(setName, title, stickers) {
+            const statusEl = document.getElementById('emojiSetStatus');
             const list = document.getElementById('emojiPickerList');
             if (!list) return;
-            list.style.display = 'flex';
-            list.style.flexDirection = 'column';
 
-            if (!ids || ids.length === 0) {
+            if (!stickers || stickers.length === 0) {
+                statusEl.innerHTML = '';
+                list.innerHTML = `
+                    <div class="history-empty" style="padding:28px 18px;">
+                        <i class="fas fa-face-meh" style="font-size:44px; margin-bottom:10px; opacity:0.3;"></i>
+                        <p>В сете «${setName}» не найдено эмодзи</p>
+                    </div>`;
+                updateEmojiSelectedCount();
+                return;
+            }
+
+            state.emojiIds = stickers.map(s => s.custom_emoji_id || s.file_unique_id || s.file_id);
+
+            statusEl.innerHTML = `
+                <div class="stickerset-header">
+                    <i class="fas fa-layer-group"></i>
+                    <span>${title || setName}</span>
+                    <span class="set-count">Всего эмодзи: ${stickers.length}</span>
+                </div>`;
+
+            list.innerHTML = `
+                <div class="emoji-table-head">
+                    <div></div>
+                    <div>Эмодзи</div>
+                    <div>ID / HTML-код</div>
+                    <div></div>
+                </div>
+                ${stickers.map((s, i) => {
+                    const id = s.custom_emoji_id || s.file_unique_id || s.file_id;
+                    const htmlCode = `&lt;tg-emoji emoji-id=&quot;${id}&quot;&gt;${s.emoji || '😀'}&lt;/tg-emoji&gt;`;
+                    // превью через thumbnail если есть
+                    let previewHtml = `<div class="emoji-placeholder">${s.emoji || '🎭'}</div>`;
+                    if (s.thumb_url) {
+                        previewHtml = `<img src="${s.thumb_url}" alt="${s.emoji || ''}" loading="lazy" onerror="this.style.display='none'">`;
+                    }
+                    return `
+                    <label class="emoji-check-row ${i % 2 === 0 ? '' : ''}" data-id="${id}">
+                        <div class="ecr-check">
+                            <input type="checkbox" class="emoji-check" value="${id}" checked
+                                onchange="onEmojiPickChanged(this)">
+                        </div>
+                        <div class="ecr-preview">${previewHtml}</div>
+                        <div class="ecr-info">
+                            <div class="ecr-id">${id}</div>
+                            <div class="ecr-html" title="Нажми чтобы скопировать" onclick="copyHtml('${id}', this)">${htmlCode}</div>
+                        </div>
+                        <button class="ecr-copy" type="button" onclick="event.preventDefault(); copyHtml('${id}', this)">Копировать</button>
+                    </label>`;
+                }).join('')}`;
+
+            updateEmojiSelectedCount();
+        }
+
+        // Загрузить стикерсет через бэкенд бота
+        // Бэкенд должен отдавать GET /api/stickerset?name=<setName>
+        // и возвращать JSON: { ok: true, title: "...", stickers: [{custom_emoji_id, emoji, thumb_url}] }
+        async function fetchStickerSet(setName) {
+            const statusEl = document.getElementById('emojiSetStatus');
+            const list = document.getElementById('emojiPickerList');
+
+            statusEl.innerHTML = `
+                <div class="stickerset-loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    Загружаю сет «${setName}»…
+                </div>`;
+            list.innerHTML = '';
+
+            try {
+                const res = await fetch(`/api/stickerset?name=${encodeURIComponent(setName)}`);
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.description || 'Ошибка API');
+                renderStickerTable(setName, data.title, data.stickers);
+                showToast(`Загружено ${data.stickers.length} эмодзи`, 'success');
+            } catch (e) {
+                statusEl.innerHTML = `
+                    <div class="stickerset-header" style="border-color:rgba(231,76,60,0.3); color:#E74C3C; background:rgba(231,76,60,0.06);">
+                        <i class="fas fa-triangle-exclamation" style="color:#E74C3C;"></i>
+                        Ошибка загрузки «${setName}»: ${e.message}
+                    </div>`;
+                list.innerHTML = '';
+                updateEmojiSelectedCount();
+            }
+        }
+
+        // Рендер "пустого" состояния или нескольких сетов по именам
+        function renderEmojiPicker(names) {
+            const statusEl = document.getElementById('emojiSetStatus');
+            const list = document.getElementById('emojiPickerList');
+            if (!list) return;
+
+            if (!names || names.length === 0) {
+                statusEl.innerHTML = '';
                 list.innerHTML = `
                     <div class="history-empty" style="padding:28px 18px;">
                         <i class="fas fa-link" style="font-size:44px; margin-bottom:10px; opacity:0.3;"></i>
-                        <p>Вставьте ссылки на Telegram-emoji (t.me/addemoji/…)</p>
+                        <p>Вставьте ссылку вида<br><span style="color:var(--green-4)">t.me/addemoji/НазваниеСета</span></p>
                     </div>`;
                 updateEmojiSelectedCount();
                 state.emojiIds = [];
                 return;
             }
 
-            state.emojiIds = ids;
-            list.innerHTML = ids.map(name => `
-                <label class="emoji-check-row">
-                    <input type="checkbox" class="emoji-check" value="${name}" checked onchange="onEmojiPickChanged()">
-                    <div class="emoji-check-info">
-                        <div class="emoji-check-id">${name}</div>
-                        <div class="emoji-check-link">
-                            <a href="https://t.me/addemoji/${name}" target="_blank" rel="noopener noreferrer">t.me/addemoji/${name}</a>
-                        </div>
-                    </div>
-                </label>
-            `).join('');
+            state.emojiIds = names;
 
-            updateEmojiSelectedCount();
+            // Загружаем первый сет автоматически (или все по очереди)
+            if (names.length === 1) {
+                fetchStickerSet(names[0]);
+            } else {
+                // несколько сетов — показываем список для выбора
+                statusEl.innerHTML = '';
+                list.innerHTML = names.map(name => `
+                    <div class="stickerset-header" style="cursor:pointer; margin-bottom:6px;"
+                         onclick="fetchStickerSet('${name}')">
+                        <i class="fas fa-layer-group"></i>
+                        <span>${name}</span>
+                        <span class="set-count"><i class="fas fa-chevron-right"></i></span>
+                    </div>`).join('');
+            }
         }
 
         function setupEmojiPicker() {
@@ -1355,47 +1576,21 @@
 
             let t = null;
             const rerender = () => {
-                const ids = extractEmojiIdsFromText(inputEl.value);
-                renderEmojiPicker(ids);
+                const names = extractEmojiIdsFromText(inputEl.value);
+                renderEmojiPicker(names);
             };
 
-            // вынесем общую логику скана в глобальную функцию
             window.scanEmojis = () => rerender();
 
-            inputEl.addEventListener('input', () => {
-                clearTimeout(t);
-                t = setTimeout(rerender, 200);
-            });
-            inputEl.addEventListener('paste', () => {
-                clearTimeout(t);
-                t = setTimeout(rerender, 200);
-            });
-            inputEl.addEventListener('change', () => {
-                clearTimeout(t);
-                t = setTimeout(rerender, 200);
-            });
-            inputEl.addEventListener('blur', () => {
-                clearTimeout(t);
-                t = setTimeout(rerender, 200);
-            });
+            inputEl.addEventListener('input', () => { clearTimeout(t); t = setTimeout(rerender, 400); });
+            inputEl.addEventListener('paste', () => { clearTimeout(t); t = setTimeout(rerender, 400); });
+            inputEl.addEventListener('change', () => { clearTimeout(t); t = setTimeout(rerender, 400); });
+            inputEl.addEventListener('blur', () => { clearTimeout(t); t = setTimeout(rerender, 400); });
             inputEl.addEventListener('keyup', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    clearTimeout(t);
-                    t = setTimeout(rerender, 150);
-                }
+                if (e.key === 'Enter') { e.preventDefault(); clearTimeout(t); t = setTimeout(rerender, 200); }
             });
 
-            // initial empty state
             renderEmojiPicker([]);
-        }
-
-        // fallback на случай, если кнопка появилась до инициализации
-        function scanEmojis() {
-            const inputEl = document.getElementById('emojiLinksInput');
-            if (!inputEl) return;
-            const ids = extractEmojiIdsFromText(inputEl.value);
-            renderEmojiPicker(ids);
         }
 
         // =============== TABS ===============
@@ -1560,14 +1755,6 @@
 
         // =============== CONVERT ===============
         function startConvert() {
-            // если список по какой-то причине не успел отрендериться (например, глючная вставка),
-            // пересканим поле и пересоздадим чекбоксы.
-            const inputEl = document.getElementById('emojiLinksInput');
-            if (inputEl) {
-                const ids = extractEmojiIdsFromText(inputEl.value);
-                if (ids && ids.length) renderEmojiPicker(ids);
-            }
-
             const selected = Array.from(document.querySelectorAll('.emoji-check:checked')).map(cb => cb.value);
             if (!selected.length) {
                 showToast('Выберите хотя бы один эмодзи', 'error');

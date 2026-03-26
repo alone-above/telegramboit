@@ -20,6 +20,8 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+import asyncpg
+
 from aiogram import Bot, Dispatcher, Router, F, types
 from aiogram.types import (
     Message, CallbackQuery, FSInputFile,
@@ -36,11 +38,20 @@ from aiogram.client.default import DefaultBotProperties
 # ║  КОНФИГУРАЦИЯ  —  ЗАПОЛНИ СВОИ ДАННЫЕ ЗДЕСЬ     ║
 # ╚══════════════════════════════════════════════════╝
 
-BOT_TOKEN = "8632657131:AAFIwXVbe0EbY7L7MLynLc8z7VFZVGXWTw4"
-ADMIN_IDS = [7774179831]            # Telegram ID админов (можно несколько)
+BOT_TOKEN = "СЮДА_ВСТАВЬ_ТОКЕН_БОТА"
+ADMIN_IDS = [123456789]            # Telegram ID админов (можно несколько)
 
 TEMP_DIR = "tmp_converter"
-DB_FILE  = "bot_database.json"
+
+# PostgreSQL URLs (в проде лучше вынести в переменные окружения)
+DATABASE_PUBLIC_URL = os.getenv(
+    "DATABASE_PUBLIC_URL",
+    "postgresql://postgres:mdRdePzUHjPzAtsSNYKbhstWNjrIxktX@centerbeam.proxy.rlwy.net:55351/railway",
+)
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://postgres:mdRdePzUHjPzAtsSNYKbhstWNjrIxktX@postgres.railway.internal:5432/railway",
+)
 
 # ══════════════════════════════════════════
 #  ШАБЛОНЫ  /  ПРЕСЕТЫ
@@ -91,74 +102,168 @@ FPS_PRESETS = {
 # ══════════════════════════════════════════
 
 class Database:
-    def __init__(self, path: str):
-        self.path = path
-        self.data: dict = {"users": {}, "stats": {"total_conversions": 0}, "bans": []}
-        self._load()
+    def __init__(self, dsn: str):
+        self.dsn = dsn
+        self.pool: asyncpg.Pool | None = None
 
-    # --- IO ---
-    def _load(self):
-        if os.path.exists(self.path):
-            with open(self.path, "r", encoding="utf-8") as f:
-                self.data = json.load(f)
+    async def init(self):
+        self.pool = await asyncpg.create_pool(dsn=self.dsn, min_size=1, max_size=6)
+        await self._ensure_schema()
 
-    def _save(self):
-        with open(self.path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2, ensure_ascii=False)
+    async def _ensure_schema(self):
+        assert self.pool is not None
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    uid BIGINT PRIMARY KEY,
+                    username TEXT NOT NULL DEFAULT '',
+                    first_name TEXT NOT NULL DEFAULT '',
+                    bg TEXT NOT NULL DEFAULT 'black',
+                    resolution TEXT NOT NULL DEFAULT '512',
+                    quality TEXT NOT NULL DEFAULT 'high',
+                    fps TEXT NOT NULL DEFAULT '30',
+                    conversions_count BIGINT NOT NULL DEFAULT 0,
+                    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    banned BOOLEAN NOT NULL DEFAULT FALSE
+                );
 
-    # --- Users ---
-    def get_user(self, uid: int) -> dict:
-        k = str(uid)
-        if k not in self.data["users"]:
-            self.data["users"][k] = {
-                "bg": "black", "resolution": "512",
-                "quality": "high", "fps": "30",
-                "conversions": 0,
-                "joined": datetime.now().isoformat(),
-                "username": "", "first_name": "",
-            }
-            self._save()
-        return self.data["users"][k]
+                CREATE TABLE IF NOT EXISTS conversions (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+                    emoji_id TEXT NOT NULL DEFAULT '',
+                    bg TEXT NOT NULL,
+                    resolution TEXT NOT NULL,
+                    quality TEXT NOT NULL,
+                    fps TEXT NOT NULL,
+                    success BOOLEAN NOT NULL DEFAULT FALSE,
+                    error TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
 
-    def set_user(self, uid: int, **kw):
-        u = self.get_user(uid)
-        u.update(kw)
-        self._save()
+                CREATE INDEX IF NOT EXISTS idx_conversions_user_id_created_at
+                    ON conversions(user_id, created_at DESC);
+                """
+            )
 
-    def inc_conversions(self, uid: int):
-        self.get_user(uid)["conversions"] += 1
-        self.data["stats"]["total_conversions"] += 1
-        self._save()
+    async def get_user(self, uid: int) -> dict:
+        assert self.pool is not None
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT uid, username, first_name, bg, resolution, quality, fps,
+                       conversions_count, joined_at, banned
+                FROM users
+                WHERE uid = $1
+                """,
+                uid,
+            )
+            if row is None:
+                await conn.execute(
+                    "INSERT INTO users (uid) VALUES ($1) ON CONFLICT DO NOTHING",
+                    uid,
+                )
+                row = await conn.fetchrow(
+                    """
+                    SELECT uid, username, first_name, bg, resolution, quality, fps,
+                           conversions_count, joined_at, banned
+                    FROM users
+                    WHERE uid = $1
+                    """,
+                    uid,
+                )
+            return dict(row)
 
-    # --- Bans ---
-    def ban(self, uid: int):
-        if uid not in self.data["bans"]:
-            self.data["bans"].append(uid)
-            self._save()
+    async def set_user(self, uid: int, **kw):
+        assert self.pool is not None
+        if not kw:
+            return
 
-    def unban(self, uid: int):
-        if uid in self.data["bans"]:
-            self.data["bans"].remove(uid)
-            self._save()
+        allowed = {"username", "first_name", "bg", "resolution", "quality", "fps", "banned"}
+        cols = [k for k in kw.keys() if k in allowed]
+        if not cols:
+            return
 
-    def is_banned(self, uid: int) -> bool:
-        return uid in self.data["bans"]
+        values = [kw[c] for c in cols]
+        setters = ", ".join(f"{c} = ${i + 2}" for i, c in enumerate(cols))
+        sql = f"UPDATE users SET {setters} WHERE uid = $1"
 
-    # --- Stats helpers ---
-    def all_uids(self) -> list[int]:
-        return [int(x) for x in self.data["users"]]
+        async with self.pool.acquire() as conn:
+            await conn.execute("INSERT INTO users (uid) VALUES ($1) ON CONFLICT DO NOTHING", uid)
+            await conn.execute(sql, uid, *values)
 
-    @property
-    def total_users(self) -> int:
-        return len(self.data["users"])
+    async def is_banned(self, uid: int) -> bool:
+        assert self.pool is not None
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT banned FROM users WHERE uid = $1", uid)
+            if row is None:
+                return False
+            return bool(row["banned"])
 
-    @property
-    def total_conversions(self) -> int:
-        return self.data["stats"].get("total_conversions", 0)
+    async def ban(self, uid: int):
+        await self.set_user(uid, banned=True)
 
-    @property
-    def total_bans(self) -> int:
-        return len(self.data["bans"])
+    async def unban(self, uid: int):
+        await self.set_user(uid, banned=False)
+
+    async def get_ban_list(self) -> list[int]:
+        assert self.pool is not None
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("SELECT uid FROM users WHERE banned = TRUE")
+        return [int(r["uid"]) for r in rows]
+
+    async def get_stats(self) -> dict:
+        assert self.pool is not None
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT
+                    (SELECT COUNT(*) FROM users) AS total_users,
+                    (SELECT COALESCE(SUM(conversions_count), 0) FROM users) AS total_conversions,
+                    (SELECT COUNT(*) FROM users WHERE banned = TRUE) AS total_bans
+                """
+            )
+        return dict(row)
+
+    async def all_uids(self) -> list[int]:
+        assert self.pool is not None
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("SELECT uid FROM users")
+        return [int(r["uid"]) for r in rows]
+
+    async def add_conversion(
+        self,
+        user_id: int,
+        emoji_id: str,
+        raw_bg: str,
+        raw_resolution: str,
+        raw_quality: str,
+        raw_fps: str,
+        success: bool,
+        error: str | None = None,
+    ):
+        assert self.pool is not None
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO conversions (user_id, emoji_id, bg, resolution, quality, fps, success, error)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    """,
+                    user_id,
+                    emoji_id or "",
+                    raw_bg,
+                    raw_resolution,
+                    raw_quality,
+                    raw_fps,
+                    success,
+                    error,
+                )
+                if success:
+                    await conn.execute(
+                        "UPDATE users SET conversions_count = conversions_count + 1 WHERE uid = $1",
+                        user_id,
+                    )
 
 
 # ══════════════════════════════════════════
@@ -186,7 +291,7 @@ bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTM
 dp  = Dispatcher(storage=MemoryStorage())
 r   = Router()
 dp.include_router(r)
-db  = Database(DB_FILE)
+db  = Database(DATABASE_URL)
 
 START_TIME = datetime.now()
 os.makedirs(TEMP_DIR, exist_ok=True)
@@ -227,7 +332,7 @@ def _make_gradient_png(c1: str, c2: str, w: int, h: int, path: str):
     img.save(path)
 
 
-async def _render_tgs(tgs_path: str, frames_dir: str, w: int, h: int):
+def _render_tgs(tgs_path: str, frames_dir: str, w: int, h: int):
     """Рендерит TGS (Lottie) в PNG-кадры через rlottie-python.
     Возвращает (количество_кадров, fps_оригинала).
     """
@@ -265,7 +370,7 @@ def _ffprobe_duration(path: str) -> float:
 #  КОНВЕРТАЦИЯ  СТИКЕРА → ВИДЕО
 # ══════════════════════════════════════════
 
-async def convert_to_video(
+def convert_to_video(
     sticker_path: str,
     stype: str,          # "tgs" | "webm" | "webp"
     bg: str,             # hex | "transparent" | "gradient:#AAA:#BBB"
@@ -285,7 +390,7 @@ async def convert_to_video(
     if stype == "tgs":
         fdir = os.path.join(work, "frames")
         os.makedirs(fdir, exist_ok=True)
-        total, orig_fps = await _render_tgs(sticker_path, fdir, w, h)
+        total, orig_fps = _render_tgs(sticker_path, fdir, w, h)
         duration = total / (orig_fps or 30)
 
         frame_input = ["-framerate", str(int(orig_fps or 30)),
@@ -406,19 +511,66 @@ async def convert_to_video(
 #  КЛАВИАТУРЫ
 # ══════════════════════════════════════════
 
-def kb_settings(uid: int) -> InlineKeyboardMarkup:
-    u = db.get_user(uid)
+async def kb_settings(uid: int) -> InlineKeyboardMarkup:
+    u = await db.get_user(uid)
 
-    def _lbl(mapping: dict, key: str) -> str:
+    import re
+
+    def bg_label(key: str) -> str:
         if key.startswith("custom:"):
             return key.split(":", 1)[1]
-        return mapping.get(key, {}).get("label", key)
+        if key in BG_COLORS:
+            return BG_COLORS[key]["label"]
+        if key.startswith("linear-gradient"):
+            colors = re.findall(r"#[0-9A-Fa-f]{6}", key)
+            if len(colors) >= 2:
+                grad = f"gradient:{colors[0]}:{colors[1]}"
+                for k, v in BG_COLORS.items():
+                    if v["value"] == grad:
+                        return v["label"]
+                return "🎨 Градиент (custom)"
+        for k, v in BG_COLORS.items():
+            if v["value"] == key:
+                return v["label"]
+        return key
+
+    def res_label(key: str) -> str:
+        if key.startswith("custom:"):
+            return key.split(":", 1)[1]
+        if key in RESOLUTIONS:
+            return RESOLUTIONS[key]["label"]
+        if "x" in key:
+            try:
+                pw, ph = key.split("x", 1)
+                w, h = int(pw), int(ph)
+                for k, v in RESOLUTIONS.items():
+                    if v["w"] == w and v["h"] == h:
+                        return v["label"]
+            except Exception:
+                pass
+        return key
+
+    def q_label(key: str) -> str:
+        if key in QUALITY_PRESETS:
+            return QUALITY_PRESETS[key]["label"]
+        if str(key).isdigit():
+            crf = int(key)
+            return f"CRF {crf}"
+        return key
+
+    def fps_label(key: str) -> str:
+        if key in FPS_PRESETS:
+            return FPS_PRESETS[key]["label"]
+        if str(key).isdigit():
+            fps = int(key)
+            return f"{fps} FPS"
+        return key
 
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"🎨 Фон: {_lbl(BG_COLORS, u['bg'])}", callback_data="s:bg")],
-        [InlineKeyboardButton(text=f"📐 Размер: {_lbl(RESOLUTIONS, u['resolution'])}", callback_data="s:res")],
-        [InlineKeyboardButton(text=f"🎬 Качество: {_lbl(QUALITY_PRESETS, u['quality'])}", callback_data="s:q")],
-        [InlineKeyboardButton(text=f"🎞 FPS: {_lbl(FPS_PRESETS, u['fps'])}", callback_data="s:fps")],
+        [InlineKeyboardButton(text=f"🎨 Фон: {bg_label(str(u['bg']))}", callback_data="s:bg")],
+        [InlineKeyboardButton(text=f"📐 Размер: {res_label(str(u['resolution']))}", callback_data="s:res")],
+        [InlineKeyboardButton(text=f"🎬 Качество: {q_label(str(u['quality']))}", callback_data="s:q")],
+        [InlineKeyboardButton(text=f"🎞 FPS: {fps_label(str(u['fps']))}", callback_data="s:fps")],
     ])
 
 
@@ -468,12 +620,14 @@ def kb_admin() -> InlineKeyboardMarkup:
 @r.message(CommandStart())
 async def h_start(msg: Message):
     uid = msg.from_user.id
-    if db.is_banned(uid):
+    if await db.is_banned(uid):
         return await msg.answer("🚫 Вы заблокированы.")
-    u = db.get_user(uid)
-    u["username"]   = msg.from_user.username or ""
-    u["first_name"] = msg.from_user.first_name or ""
-    db._save()
+    await db.get_user(uid)
+    await db.set_user(
+        uid,
+        username=msg.from_user.username or "",
+        first_name=msg.from_user.first_name or "",
+    )
 
     txt = (
         "👋 <b>Привет! Я конвертер Premium Emoji → Видео</b>\n\n"
@@ -505,9 +659,12 @@ async def h_help(msg: Message):
 
 @r.message(Command("settings"))
 async def h_settings(msg: Message):
-    if db.is_banned(msg.from_user.id):
+    if await db.is_banned(msg.from_user.id):
         return
-    await msg.answer("⚙️ <b>Настройки конвертации:</b>", reply_markup=kb_settings(msg.from_user.id))
+    await msg.answer(
+        "⚙️ <b>Настройки конвертации:</b>",
+        reply_markup=await kb_settings(msg.from_user.id),
+    )
 
 
 @r.message(Command("admin"))
@@ -535,7 +692,7 @@ async def h_cancel(msg: Message, state: FSMContext):
 @r.callback_query(F.data == "s:back")
 async def cb_back(cb: CallbackQuery):
     await cb.message.edit_text("⚙️ <b>Настройки конвертации:</b>",
-                               reply_markup=kb_settings(cb.from_user.id))
+                               reply_markup=await kb_settings(cb.from_user.id))
 
 @r.callback_query(F.data == "s:bg")
 async def cb_bg(cb: CallbackQuery):
@@ -567,10 +724,10 @@ async def cb_set_bg(cb: CallbackQuery, state: FSMContext):
             ]),
         )
         return
-    db.set_user(cb.from_user.id, bg=key)
+    await db.set_user(cb.from_user.id, bg=key)
     await cb.answer(f"✅ {BG_COLORS[key]['label']}")
     await cb.message.edit_text("⚙️ <b>Настройки конвертации:</b>",
-                               reply_markup=kb_settings(cb.from_user.id))
+                               reply_markup=await kb_settings(cb.from_user.id))
 
 # --- Установка разрешения ---
 @r.callback_query(F.data.startswith("res:"))
@@ -585,28 +742,28 @@ async def cb_set_res(cb: CallbackQuery, state: FSMContext):
             ]),
         )
         return
-    db.set_user(cb.from_user.id, resolution=key)
+    await db.set_user(cb.from_user.id, resolution=key)
     await cb.answer(f"✅ {RESOLUTIONS[key]['label']}")
     await cb.message.edit_text("⚙️ <b>Настройки конвертации:</b>",
-                               reply_markup=kb_settings(cb.from_user.id))
+                               reply_markup=await kb_settings(cb.from_user.id))
 
 # --- Установка качества ---
 @r.callback_query(F.data.startswith("q:"))
 async def cb_set_q(cb: CallbackQuery):
     key = cb.data.split(":", 1)[1]
-    db.set_user(cb.from_user.id, quality=key)
+    await db.set_user(cb.from_user.id, quality=key)
     await cb.answer(f"✅ {QUALITY_PRESETS[key]['label']}")
     await cb.message.edit_text("⚙️ <b>Настройки конвертации:</b>",
-                               reply_markup=kb_settings(cb.from_user.id))
+                               reply_markup=await kb_settings(cb.from_user.id))
 
 # --- Установка FPS ---
 @r.callback_query(F.data.startswith("fps:"))
 async def cb_set_fps(cb: CallbackQuery):
     key = cb.data.split(":", 1)[1]
-    db.set_user(cb.from_user.id, fps=key)
+    await db.set_user(cb.from_user.id, fps=key)
     await cb.answer(f"✅ {FPS_PRESETS[key]['label']}")
     await cb.message.edit_text("⚙️ <b>Настройки конвертации:</b>",
-                               reply_markup=kb_settings(cb.from_user.id))
+                               reply_markup=await kb_settings(cb.from_user.id))
 
 
 # ══════════════════════════════════════════
@@ -618,9 +775,12 @@ async def fsm_custom_bg(msg: Message, state: FSMContext):
     t = msg.text.strip() if msg.text else ""
     if not t.startswith("#") or len(t) not in (4, 7):
         return await msg.answer("❌ Неверный формат. Пример: <code>#FF5733</code>")
-    db.set_user(msg.from_user.id, bg=f"custom:{t}")
+    await db.set_user(msg.from_user.id, bg=f"custom:{t}")
     await state.clear()
-    await msg.answer(f"✅ Цвет фона: {t}", reply_markup=kb_settings(msg.from_user.id))
+    await msg.answer(
+        f"✅ Цвет фона: {t}",
+        reply_markup=await kb_settings(msg.from_user.id),
+    )
 
 
 @r.message(UserSt.custom_res)
@@ -632,9 +792,12 @@ async def fsm_custom_res(msg: Message, state: FSMContext):
         assert 100 <= pw <= 3840 and 100 <= ph <= 2160
     except Exception:
         return await msg.answer("❌ Формат: <code>WxH</code>, от 100 до 3840. Пример: <code>800x600</code>")
-    db.set_user(msg.from_user.id, resolution=f"custom:{pw}x{ph}")
+    await db.set_user(msg.from_user.id, resolution=f"custom:{pw}x{ph}")
     await state.clear()
-    await msg.answer(f"✅ Разрешение: {pw}×{ph}", reply_markup=kb_settings(msg.from_user.id))
+    await msg.answer(
+        f"✅ Разрешение: {pw}×{ph}",
+        reply_markup=await kb_settings(msg.from_user.id),
+    )
 
 
 # ══════════════════════════════════════════
@@ -645,14 +808,15 @@ async def fsm_custom_res(msg: Message, state: FSMContext):
 async def cb_stats(cb: CallbackQuery):
     if not is_admin(cb.from_user.id):
         return
+    stats = await db.get_stats()
     dt = datetime.now() - START_TIME
     h, rem = divmod(int(dt.total_seconds()), 3600)
     m, s = divmod(rem, 60)
     await cb.message.edit_text(
         "📊 <b>Статистика:</b>\n\n"
-        f"👥 Пользователей: <b>{db.total_users}</b>\n"
-        f"🔄 Конвертаций: <b>{db.total_conversions}</b>\n"
-        f"🚫 Банов: <b>{db.total_bans}</b>\n"
+        f"👥 Пользователей: <b>{stats['total_users']}</b>\n"
+        f"🔄 Конвертаций: <b>{stats['total_conversions']}</b>\n"
+        f"🚫 Банов: <b>{stats['total_bans']}</b>\n"
         f"⏱ Аптайм: <b>{h}ч {m}м {s}с</b>",
         reply_markup=kb_admin(),
     )
@@ -682,7 +846,7 @@ async def cb_unban(cb: CallbackQuery, state: FSMContext):
 async def cb_banlist(cb: CallbackQuery):
     if not is_admin(cb.from_user.id):
         return
-    bans = db.data["bans"]
+    bans = await db.get_ban_list()
     txt = "📋 <b>Бан-лист пуст.</b>" if not bans else "📋 <b>Бан-лист:</b>\n\n" + "\n".join(f"• <code>{x}</code>" for x in bans)
     await cb.message.edit_text(txt, reply_markup=kb_admin())
 
@@ -692,7 +856,7 @@ async def fsm_broadcast(msg: Message, state: FSMContext):
     if not is_admin(msg.from_user.id):
         return
     await state.clear()
-    uids = db.all_uids()
+    uids = await db.all_uids()
     ok = fail = 0
     st = await msg.answer(f"📢 Рассылка… 0/{len(uids)}")
     for i, uid in enumerate(uids, 1):
@@ -720,7 +884,7 @@ async def fsm_ban(msg: Message, state: FSMContext):
         uid = int(msg.text.strip())
     except Exception:
         return await msg.answer("❌ Введи числовой ID.")
-    db.ban(uid)
+    await db.ban(uid)
     await state.clear()
     await msg.answer(f"🚫 <code>{uid}</code> забанен.", reply_markup=kb_admin())
 
@@ -732,7 +896,7 @@ async def fsm_unban(msg: Message, state: FSMContext):
         uid = int(msg.text.strip())
     except Exception:
         return await msg.answer("❌ Введи числовой ID.")
-    db.unban(uid)
+    await db.unban(uid)
     await state.clear()
     await msg.answer(f"✅ <code>{uid}</code> разбанен.", reply_markup=kb_admin())
 
@@ -741,46 +905,87 @@ async def fsm_unban(msg: Message, state: FSMContext):
 #  ПОЛУЧЕНИЕ ПАРАМЕТРОВ ПОЛЬЗОВАТЕЛЯ
 # ══════════════════════════════════════════
 
-def user_params(uid: int) -> dict:
-    u = db.get_user(uid)
+async def user_params(uid: int) -> dict:
+    import re
 
-    # фон
-    bk = u.get("bg", "black")
+    u = await db.get_user(uid)
+
+    # --- фон (примем и "ключи" из бота, и "сырой" формат с web-интерфейса) ---
+    bk = str(u.get("bg", "black"))
     if bk.startswith("custom:"):
         bg_val = bk.split(":", 1)[1]
+    elif bk == "transparent":
+        bg_val = "transparent"
+    elif bk.startswith("gradient:"):
+        bg_val = bk
+    elif bk.startswith("linear-gradient"):
+        colors = re.findall(r"#[0-9A-Fa-f]{6}", bk)
+        if len(colors) >= 2:
+            bg_val = f"gradient:{colors[0]}:{colors[1]}"
+        else:
+            bg_val = "#000000"
+    elif bk.startswith("#"):
+        bg_val = bk
     elif bk in BG_COLORS:
         bg_val = BG_COLORS[bk]["value"]
     else:
         bg_val = "#000000"
 
-    # разрешение
-    rk = u.get("resolution", "512")
+    # --- разрешение ---
+    rk = str(u.get("resolution", "512"))
     if rk.startswith("custom:"):
         pw, ph = rk.split(":", 1)[1].split("x")
         w, h = int(pw), int(ph)
     elif rk in RESOLUTIONS:
         w, h = RESOLUTIONS[rk]["w"], RESOLUTIONS[rk]["h"]
+    elif "x" in rk:
+        pw, ph = rk.split("x", 1)
+        w, h = int(pw), int(ph)
     else:
         w, h = 512, 512
 
-    qk  = u.get("quality", "high")
-    crf = QUALITY_PRESETS.get(qk, QUALITY_PRESETS["high"])["crf"]
+    # --- качество (CRF) ---
+    qk = u.get("quality", "high")
+    qk_str = str(qk)
+    if qk_str.isdigit():
+        crf = int(qk_str)
+    else:
+        crf = QUALITY_PRESETS.get(qk_str, QUALITY_PRESETS["high"])["crf"]
 
-    fk  = u.get("fps", "30")
-    fps = FPS_PRESETS.get(fk, FPS_PRESETS["30"])["fps"]
+    # --- FPS ---
+    fk = u.get("fps", "30")
+    fk_str = str(fk)
+    if fk_str.isdigit():
+        fps = int(fk_str)
+    else:
+        fps = FPS_PRESETS.get(fk_str, FPS_PRESETS["30"])["fps"]
 
-    return {"bg": bg_val, "w": w, "h": h, "crf": crf, "fps": fps}
+    return {
+        "bg": bg_val,
+        "w": w,
+        "h": h,
+        "crf": crf,
+        "fps": fps,
+        # для записи в историю
+        "raw_bg": bk,
+        "raw_resolution": rk,
+        "raw_quality": qk_str,
+        "raw_fps": fk_str,
+    }
 
 
 # ══════════════════════════════════════════
 #  ОБЩАЯ ФУНКЦИЯ ОБРАБОТКИ СТИКЕРА
 # ══════════════════════════════════════════
 
-async def _process(msg: Message, sticker: types.Sticker):
+async def _process(msg: Message, sticker: types.Sticker, *, emoji_id: str = ""):
     uid  = msg.from_user.id
     work = _workdir()
+    p: dict | None = None
+    success = False
+    err_txt: str | None = None
     try:
-        p   = user_params(uid)
+        p   = await user_params(uid)
         st  = await msg.answer("⏳ Скачиваю…")
 
         if sticker.is_animated:
@@ -796,12 +1001,18 @@ async def _process(msg: Message, sticker: types.Sticker):
 
         await st.edit_text("🔄 Конвертирую…")
 
-        out = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: asyncio.get_event_loop().run_until_complete(
-                convert_to_video(spath, stype, p["bg"], p["w"], p["h"], p["crf"], p["fps"], work)
-            ),
-        ) if False else await convert_to_video(spath, stype, p["bg"], p["w"], p["h"], p["crf"], p["fps"], work)
+        # ffmpeg/рендеринг может быть долгим и блокирующим — запускаем в отдельном потоке
+        out = await asyncio.to_thread(
+            convert_to_video,
+            spath,
+            stype,
+            p["bg"],
+            p["w"],
+            p["h"],
+            p["crf"],
+            p["fps"],
+            work,
+        )
 
         await st.edit_text("📤 Отправляю…")
 
@@ -811,24 +1022,130 @@ async def _process(msg: Message, sticker: types.Sticker):
         else:
             await msg.answer_video(vf, caption="✅ Готово!")
         await st.delete()
-        db.inc_conversions(uid)
+        success = True
 
     except Exception as e:
         log.exception("conversion failed")
+        err_txt = str(e)[:2000]
         await msg.answer(f"❌ Ошибка:\n<pre>{str(e)[:800]}</pre>")
     finally:
+        if p is not None:
+            try:
+                await db.add_conversion(
+                    user_id=uid,
+                    emoji_id=emoji_id,
+                    raw_bg=p["raw_bg"],
+                    raw_resolution=p["raw_resolution"],
+                    raw_quality=p["raw_quality"],
+                    raw_fps=p["raw_fps"],
+                    success=success,
+                    error=err_txt,
+                )
+            except Exception:
+                # Не роняем бота из-за записи истории
+                pass
         _cleanup(work)
+
+    return success
 
 
 # ══════════════════════════════════════════
 #  ОБРАБОТЧИКИ  —  СТИКЕРЫ И ЭМОДЗИ
 # ══════════════════════════════════════════
 
+@r.message(F.web_app_data)
+async def h_webapp_data(msg: Message):
+    if not msg.web_app_data or not msg.web_app_data.data:
+        return
+
+    uid = msg.from_user.id
+    if await db.is_banned(uid):
+        return
+
+    try:
+        payload = json.loads(msg.web_app_data.data)
+    except Exception:
+        return
+
+    if payload.get("action") != "convert":
+        return
+
+    bg = str(payload.get("bg", "black"))
+    resolution = str(payload.get("resolution", "512x512"))
+    quality = str(payload.get("quality", "high"))
+    fps = str(payload.get("fps", "30"))
+
+    await db.set_user(uid, bg=bg, resolution=resolution, quality=quality, fps=fps)
+
+    emoji_ids = payload.get("emoji_ids") or []
+    if not emoji_ids and payload.get("emoji_id"):
+        emoji_ids = [payload.get("emoji_id")]
+
+    selected: list[str] = []
+    seen: set[str] = set()
+    for x in emoji_ids:
+        s = str(x).strip()
+        if not s.isdigit() or s in seen:
+            continue
+        seen.add(s)
+        selected.append(s)
+
+    if not selected:
+        await msg.answer("❌ Не выбрано ни одного эмодзи.")
+        return
+
+    p = await user_params(uid)
+
+    st = await msg.answer(f"🔄 Конвертирую {len(selected)} эмодзи…")
+    ok = fail = 0
+
+    for i, eid in enumerate(selected, 1):
+        try:
+            try:
+                await st.edit_text(f"🔄 Конвертирую {i}/{len(selected)}…")
+            except Exception:
+                pass
+
+            stickers = await bot.get_custom_emoji_stickers([eid])
+            if stickers:
+                res = await _process(msg, stickers[0], emoji_id=eid)
+                if res:
+                    ok += 1
+                else:
+                    fail += 1
+            else:
+                fail += 1
+                await db.add_conversion(
+                    user_id=uid,
+                    emoji_id=eid,
+                    raw_bg=p["raw_bg"],
+                    raw_resolution=p["raw_resolution"],
+                    raw_quality=p["raw_quality"],
+                    raw_fps=p["raw_fps"],
+                    success=False,
+                    error="Not found (no sticker)",
+                )
+        except Exception as e:
+            fail += 1
+            await db.add_conversion(
+                user_id=uid,
+                emoji_id=eid,
+                raw_bg=p["raw_bg"],
+                raw_resolution=p["raw_resolution"],
+                raw_quality=p["raw_quality"],
+                raw_fps=p["raw_fps"],
+                success=False,
+                error=str(e)[:800],
+            )
+
+    await st.edit_text(f"✅ Готово: {ok} успешно, {fail} ошибок.")
+
+
 @r.message(F.sticker)
 async def h_sticker(msg: Message):
-    if db.is_banned(msg.from_user.id):
+    if await db.is_banned(msg.from_user.id):
         return
-    db.get_user(msg.from_user.id)
+    await db.get_user(msg.from_user.id)
     await _process(msg, msg.sticker)
 
 
@@ -838,18 +1155,19 @@ async def h_entities(msg: Message, state: FSMContext):
     if await state.get_state() is not None:
         return
     uid = msg.from_user.id
-    if db.is_banned(uid):
+    if await db.is_banned(uid):
         return
 
     ids = [e.custom_emoji_id for e in (msg.entities or []) if e.type == "custom_emoji" and e.custom_emoji_id]
     if not ids:
         return
 
-    db.get_user(uid)
+    await db.get_user(uid)
     try:
-        stickers = await bot.get_custom_emoji_stickers(ids[:1])
+        first_id = ids[0]
+        stickers = await bot.get_custom_emoji_stickers([first_id])
         if stickers:
-            await _process(msg, stickers[0])
+            await _process(msg, stickers[0], emoji_id=first_id)
         else:
             await msg.answer("❌ Не удалось получить эмодзи.")
     except Exception as e:
@@ -862,18 +1180,18 @@ async def h_text(msg: Message, state: FSMContext):
     if await state.get_state() is not None:
         return
     uid = msg.from_user.id
-    if db.is_banned(uid):
+    if await db.is_banned(uid):
         return
 
     t = (msg.text or "").strip()
     if not t.isdigit() or len(t) < 6:
         return  # не emoji-id — игнорируем
 
-    db.get_user(uid)
+    await db.get_user(uid)
     try:
         stickers = await bot.get_custom_emoji_stickers([t])
         if stickers:
-            await _process(msg, stickers[0])
+            await _process(msg, stickers[0], emoji_id=t)
         else:
             await msg.answer("❌ Эмодзи с таким ID не найден.")
     except Exception as e:
@@ -886,6 +1204,7 @@ async def h_text(msg: Message, state: FSMContext):
 
 async def main():
     log.info("═══ Bot starting ═══")
+    await db.init()
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 

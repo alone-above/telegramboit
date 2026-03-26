@@ -1324,25 +1324,11 @@
             tg.setBackgroundColor('#0D0F0E');
         }
 
-        // Токен бота: берём из start_param (бот открывает WebApp с ?startapp=TOKEN)
-        // либо из hash-параметра для dev-режима: index.html#token=123:ABC
+        // Токен бота — берётся из того же main.py
+        const BOT_TOKEN = "8632657131:AAFIwXVbe0EbY7L7MLynLc8z7VFZVGXWTw4";
+
         function getBotToken() {
-            // 1. Из start_param (передаётся ботом при открытии WebApp)
-            const sp = tg?.initDataUnsafe?.start_param;
-            if (sp && sp.includes(':')) return sp;
-
-            // 2. Из URL hash (#token=123:ABC)
-            const hash = location.hash.replace('#', '');
-            const params = new URLSearchParams(hash);
-            const t = params.get('token');
-            if (t && t.includes(':')) return t;
-
-            // 3. Из URL query (?token=123:ABC) — для локальной разработки
-            const qp = new URLSearchParams(location.search);
-            const qt = qp.get('token');
-            if (qt && qt.includes(':')) return qt;
-
-            return null;
+            return BOT_TOKEN;
         }
 
         // =============== STATE ===============
@@ -1527,17 +1513,7 @@
         async function fetchStickerSet(setName) {
             const statusEl = document.getElementById('emojiSetStatus');
             const list = document.getElementById('emojiPickerList');
-
             const token = getBotToken();
-            if (!token) {
-                statusEl.innerHTML = `
-                    <div class="stickerset-header" style="border-color:rgba(231,76,60,0.3); color:#E74C3C; background:rgba(231,76,60,0.06);">
-                        <i class="fas fa-key" style="color:#E74C3C;"></i>
-                        Токен бота не найден. Откройте WebApp через бота или добавьте <code style="font-size:10px;">#token=YOUR_TOKEN</code> к URL.
-                    </div>`;
-                list.innerHTML = '';
-                return;
-            }
 
             statusEl.innerHTML = `
                 <div class="stickerset-loading">
@@ -1557,23 +1533,21 @@
                 }
 
                 const set = data.result;
-                // Формируем массив стикеров с превью через file_id
+                // Сначала рендерим с emoji-заглушками
                 const stickers = set.stickers.map(s => ({
                     custom_emoji_id: s.custom_emoji_id || s.file_unique_id,
                     emoji: s.emoji || '🎭',
                     file_id: s.file_id,
-                    // превью грузим через getFile → но это требует токен, поэтому используем emoji как превью
-                    thumb_url: s.thumbnail
-                        ? `https://api.telegram.org/file/bot${token}/${s.thumbnail.file_path || ''}`
-                        : null
+                    thumbnail: s.thumbnail || null,
+                    thumb_url: null
                 }));
 
-                // Для thumbnail нужен file_path — подгрузим асинхронно
                 renderStickerTable(setName, set.title, stickers);
                 showToast(`Загружено ${stickers.length} эмодзи`, 'success');
+                if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
 
-                // Асинхронно подгружаем превью через getFile
-                loadThumbnails(token, set.stickers);
+                // Параллельно грузим превью
+                loadThumbnails(token, stickers);
 
             } catch (e) {
                 statusEl.innerHTML = `
@@ -1586,30 +1560,35 @@
             }
         }
 
-        // Асинхронно загружаем превью для каждого стикера и вставляем в DOM
+        // Параллельная загрузка превью через getFile
         async function loadThumbnails(token, stickers) {
-            for (const s of stickers) {
-                const id = s.custom_emoji_id || s.file_unique_id;
-                const thumbFileId = s.thumbnail?.file_id || s.thumb?.file_id;
-                if (!thumbFileId) continue;
+            // Грузим по 5 штук параллельно чтобы не перегружать
+            const BATCH = 5;
+            for (let i = 0; i < stickers.length; i += BATCH) {
+                const batch = stickers.slice(i, i + BATCH);
+                await Promise.all(batch.map(async (s) => {
+                    const id = s.custom_emoji_id || s.file_unique_id;
+                    const thumbFileId = s.thumbnail?.file_id;
+                    if (!thumbFileId) return;
 
-                const row = document.querySelector(`[data-id="${id}"] .ecr-preview`);
-                if (!row) continue;
+                    const previewEl = document.querySelector(`[data-id="${id}"] .ecr-preview`);
+                    if (!previewEl) return;
 
-                try {
-                    const res = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${thumbFileId}`);
-                    const data = await res.json();
-                    if (!data.ok || !data.result?.file_path) continue;
+                    try {
+                        const res = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${thumbFileId}`);
+                        const data = await res.json();
+                        if (!data.ok || !data.result?.file_path) return;
 
-                    const url = `https://api.telegram.org/file/bot${token}/${data.result.file_path}`;
-                    const ext = data.result.file_path.split('.').pop().toLowerCase();
+                        const url = `https://api.telegram.org/file/bot${token}/${data.result.file_path}`;
+                        const ext = data.result.file_path.split('.').pop().toLowerCase();
 
-                    if (ext === 'webm' || ext === 'mp4') {
-                        row.innerHTML = `<video src="${url}" autoplay loop muted playsinline></video>`;
-                    } else {
-                        row.innerHTML = `<img src="${url}" alt="" loading="lazy">`;
-                    }
-                } catch (_) { /* пропускаем */ }
+                        if (ext === 'webm' || ext === 'mp4') {
+                            previewEl.innerHTML = `<video src="${url}" autoplay loop muted playsinline style="width:36px;height:36px;border-radius:6px;"></video>`;
+                        } else {
+                            previewEl.innerHTML = `<img src="${url}" alt="" style="width:36px;height:36px;border-radius:6px;object-fit:contain;" onerror="this.parentElement.innerHTML='<div class=\\'emoji-placeholder\\'>${s.emoji || '🎭'}</div>'">`;
+                        }
+                    } catch (_) { /* пропускаем */ }
+                }));
             }
         }
 
@@ -1879,7 +1858,7 @@
 
             const data = {
                 action: 'convert',
-                set_names: selected,
+                emoji_ids: selected,   // числовые custom_emoji_id из getStickerSet
                 bg: state.bg,
                 resolution: state.resolution,
                 quality: state.quality,
@@ -1901,9 +1880,9 @@
                 statusIcon.style.background = 'rgba(120, 231, 0, 0.1)';
                 statusIcon.style.color = 'var(--green-1)';
                 statusTitle.textContent = 'Отправлено!';
-                statusText.textContent = 'Ждите видео в чате с ботом.';
+                statusText.textContent = `Бот конвертирует ${selected.length} эмодзи. Ждите в чате!`;
                 progressWrap.style.display = 'none';
-                showToast(`Запрос отправлен: ${selected.length} сет(ов)`, 'info');
+                showToast(`Запрос отправлен: ${selected.length} эмодзи`, 'success');
                 if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
             } catch (e) {
                 clearInterval(progressInterval);
